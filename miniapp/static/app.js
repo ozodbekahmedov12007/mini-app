@@ -31,7 +31,7 @@ $('community-link').onclick=()=>show('chat').catch(e=>notify(e.message));
 $('profile-button').onclick=()=>show('profile').catch(e=>notify(e.message));
 async function screenings(){
   const data=await api('screenings');$('screenings').replaceChildren();$('screening-count').textContent=`${data.screenings.length} TA SEANS`;
-  if(!data.screenings.length){$('screenings').append(node('div','empty','Yangi seanslar tez orada. Ungacha umumiy chatda suhbatlashamiz.'));return;}
+  if(!data.screenings.length){const empty=node('div','empty');empty.append(node('strong','','Hozircha seans yo‘q'),node('p','','Yangi kino rejalashtirilganda shu yerda ko‘rinadi. Hozir umumiy suhbatga qo‘shilishingiz mumkin.'));$('screenings').append(empty);return;}
   data.screenings.forEach((s,i)=>{
     const card=node('article','screening-card'),poster=node('div','poster'+(i%2?' alt':'')),body=node('div','card-body');
     const live=s.starts<=Date.now()/1000;
@@ -134,9 +134,32 @@ async function record(kind){
 }
 async function dashboard(){const data=await api('admin');$('online-count').textContent=data.online;$('admin-seance-count').textContent=data.screenings.length;$('admin-screenings').replaceChildren();for(const s of data.screenings){const item=node('div','admin-item'),detail=node('div','',s.title);detail.append(node('small','',`${stamp(s.starts)} · ${s.cancelled?'Bekor qilingan':s.ends<Date.now()/1000?'Tugagan':s.vip?'VIP':'Ommaviy'}`));item.append(detail);if(!s.cancelled&&s.ends>Date.now()/1000)item.append(button('Yakunlash','secondary',async()=>{if(!confirm('Seans barcha xonalarda yakunlansinmi?'))return;await api('cancel',{id:s.id});await dashboard();}));$('admin-screenings').append(item);}if(!data.screenings.length)$('admin-screenings').append(node('div','empty','Hali seans yaratilmagan.'));$('reports').replaceChildren();for(const r of data.reports){const item=node('div','panel');item.append(node('strong','',`${r.name} · ID ${r.author_id}`),node('p','message-text',r.text),node('p','muted',r.reason),button('Xabarni o‘chirish','secondary',async()=>{await api('moderate',{message_id:r.message_id});await dashboard();}));$('reports').append(item);}if(!data.reports.length)$('reports').append(node('p','muted','Hozircha shikoyat yo‘q.'));}
 $('catalog-search').onclick=async()=>{try{const data=await api('catalog?q='+encodeURIComponent($('catalog-query').value));$('catalog-results').replaceChildren();for(const m of data.movies)$('catalog-results').append(button(`#${m.code} · ${m.title}${m.vip?' · VIP':''}`,'secondary',()=>{const f=$('screening-form');f.elements.title.value=m.title;f.elements.description.value=m.description;f.elements.movie_code.value=m.code;f.elements.vip.checked=m.vip;$('catalog-results').replaceChildren();notify('Kino ma’lumotlari olindi. Video faylini ham tanlang.');}));if(!data.movies.length)notify('Kino topilmadi');}catch(e){notify(e.message);}};
-$('movie-file').onchange=()=>{const f=$('movie-file').files[0];if(!f)return;const video=document.createElement('video');const url=URL.createObjectURL(f);video.preload='metadata';video.src=url;video.onloadedmetadata=()=>{if(Number.isFinite(video.duration))$('screening-form').elements.minutes.value=(video.duration/60).toFixed(2);URL.revokeObjectURL(url);};video.onerror=()=>{URL.revokeObjectURL(url);notify('Video formatini tekshiring: MP4 H.264/AAC tavsiya etiladi');};};
+let cancelMovieMetadata = () => {};
+let suggestedMovieTitle = '';
+$('movie-file').onchange=()=>{
+  cancelMovieMetadata();
+  const file=$('movie-file').files[0];if(!file)return;
+  const form=$('screening-form');
+  if(!form.elements.title.value.trim() || form.elements.title.value===suggestedMovieTitle){
+    suggestedMovieTitle=file.name.replace(/\.[^.]+$/,'').replace(/_+/g,' ').slice(0,160);
+    form.elements.title.value=suggestedMovieTitle;
+  }
+  const video=document.createElement('video'),url=URL.createObjectURL(file);
+  let timer;
+  const cleanup=()=>{clearTimeout(timer);video.onloadedmetadata=null;video.onerror=null;video.removeAttribute('src');video.load();URL.revokeObjectURL(url);};
+  cancelMovieMetadata=cleanup;
+  video.preload='metadata';
+  video.onloadedmetadata=()=>{
+    if($('movie-file').files[0]===file && Number.isFinite(video.duration) && video.duration>0)
+      form.elements.minutes.value=(video.duration/60).toFixed(2);
+    cleanup();
+  };
+  video.onerror=()=>{cleanup();notify('Davomiylik olinmadi. Qo‘shimcha sozlamalarda daqiqani kiriting.');};
+  timer=setTimeout(()=>{cleanup();notify('Davomiylikni qo‘shimcha sozlamalarda tekshiring.');},15000);
+  video.src=url;
+};
 $('screening-form').elements.minutes.step='0.01';
-$('screening-form').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget,submit=$('publish-button');submit.disabled=true;$('upload-progress').hidden=false;try{const file=$('movie-file').files[0];if(!file)throw new Error('Kino faylini tanlang');const asset=await upload(file,'movie',percent=>{$('upload-progress').value=percent;$('upload-status').textContent=`Yuklanmoqda: ${percent}%`;});await api('screening',{title:form.elements.title.value,description:form.elements.description.value,movie_code:form.elements.movie_code.value||null,starts:Math.floor(new Date(form.elements.starts.value).getTime()/1000),duration:Math.round(Number(form.elements.minutes.value)*60),vip:form.elements.vip.checked,asset_id:asset.id});form.reset();$('upload-status').textContent='Seans rejalashtirildi';notify('Seans yaratildi');await dashboard();}catch(err){$('upload-status').textContent=err.message;notify(err.message);}finally{submit.disabled=false;}};
+$('screening-form').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget,submit=$('publish-button');submit.disabled=true;$('upload-progress').hidden=false;try{const file=$('movie-file').files[0];if(!file)throw new Error('Kino faylini tanlang');const asset=await upload(file,'movie',percent=>{$('upload-progress').value=percent;$('upload-status').textContent=`Yuklanmoqda: ${percent}%`;});await api('screening',{title:form.elements.title.value,description:form.elements.description.value,movie_code:form.elements.movie_code.value||null,starts:form.elements.starts.value?Math.floor(new Date(form.elements.starts.value).getTime()/1000):Math.floor(Date.now()/1000)+5,duration:Math.round(Number(form.elements.minutes.value)*60),vip:form.elements.vip.checked,asset_id:asset.id});form.reset();$('upload-status').textContent='Seans rejalashtirildi';notify('Seans yaratildi');await dashboard();}catch(err){$('upload-status').textContent=err.message;notify(err.message);}finally{submit.disabled=false;}};
 $('restriction-form').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget;try{await api('moderate',{user_id:form.elements.user_id.value,hours:form.elements.hours.value,banned:form.elements.banned.checked});notify('Cheklov yangilandi');}catch(err){notify(err.message);}};
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&state.room)tickRoom();});
 async function boot(){if(!initData){await show('login');return;}try{const info=await api('me');state.user=info.user;state.botUsername=info.bot_username;$('profile-button').replaceChildren(...avatar(state.user).childNodes);$('admin-nav').hidden=!state.user.admin;const param=tg?.initDataUnsafe?.start_param||new URLSearchParams(location.search).get('tgWebAppStartParam')||'';if(param.startsWith('room_'))await join({room:param.slice(5)});else await show('home');}catch(e){notify(e.message);if(!state.user)await show('login');else await show('home');}}

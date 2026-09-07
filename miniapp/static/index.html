@@ -2,23 +2,25 @@
 <html lang="uz">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#111316"><title>Kino Club</title>
+  <meta name="theme-color" content="#111316"><title>MovieRay — Kino Club</title>
   <link rel="stylesheet" href="/static/style.css">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script defer src="/static/app.js"></script>
 </head>
 <body>
-  <header class="topbar"><a class="brand" href="/" aria-label="Bosh sahifa"><span class="brand-mark">k.</span> KINO<span class="brand-light">CLUB</span></a><button id="profile-button" class="avatar" aria-label="Profil">K</button></header>
+  <header class="topbar"><a class="brand" href="/" aria-label="Bosh sahifa"><span class="brand-mark">▶</span> MovieRay<span class="brand-light">CLUB</span></a><button id="profile-button" class="avatar" aria-label="Profil">K</button></header>
   <main>
     <div id="notice" role="status" hidden></div>
     <section id="view-home" class="view">
-      <div class="eyebrow"><span class="dot"></span> BIRGA KO‘RISH QIZIQROQ</div>
-      <h1>Bir kino.<br>Birga <em>his qilamiz.</em></h1>
-      <p class="intro">Do‘stlaringizni chaqiring. Xona tanlang.<br>Kino va suhbat shu yerda.</p>
-      <div class="hero-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="film-ticket"><span>KINO CLUB / SEANS</span><strong>20</strong><small>KISHILIK XONALAR</small><div class="ticket-dots">● ● ● ● ● ● ● ●</div></div><span class="floating-star">✦</span></div>
-      <div class="section-heading"><h2>Seanslar</h2><span id="screening-count" class="pill">JADVAL</span></div>
+      <div class="home-hero">
+        <div class="eyebrow">MOVIERAY / BIRGALIKDA TOMOSHA</div>
+        <div class="hero-heading"><h1>Birga kinoni<br><em>his qilamiz.</em></h1><span class="cinema-mark" aria-hidden="true">▶</span></div>
+        <p class="intro">Yaxshi kino. Yaqin do‘stlar.<br>Barchasi bitta xonada.</p>
+        <div class="hero-tags"><span>20 kishigacha</span><span>Bir vaqtda tomosha</span></div>
+      </div>
+      <div class="section-heading"><h2>Kino seanslari</h2><span id="screening-count" class="pill">JADVAL</span></div>
       <div id="screenings" class="cards"><div class="empty">Seanslar yuklanmoqda…</div></div>
-      <button id="community-link" class="community-card"><span class="community-icon">☏</span><span><strong>Kino tugaydi. Suhbat davom etadi.</strong><small>Umumiy chatga qo‘shiling →</small></span></button>
+      <button id="community-link" class="community-card"><span class="community-icon">↗</span><span><strong>Umumiy suhbat</strong><small>Do‘stlar va kino haqidagi fikrlar →</small></span></button>
     </section>
     <section id="view-chat" class="view" hidden>
       <div class="section-heading"><div><div class="eyebrow">KINO CLUB JAMOASI</div><h1 class="small-title">Umumiy chat</h1></div><span class="pill"><span class="dot"></span> SUHBAT</span></div>
@@ -42,17 +44,18 @@
       <div class="eyebrow">BOSHQARUV</div><h1 class="small-title">Admin panel</h1>
       <div class="admin-stats"><div><strong id="online-count">0</strong><small>Xonalarda hozir</small></div><div><strong id="admin-seance-count">0</strong><small>Seanslar</small></div></div>
       <form id="screening-form" class="panel">
-        <h2>Yangi seans</h2>
-        <label>Botdagi kinoni topish<div class="inline"><input id="catalog-query" placeholder="Kino nomi yoki kodi"><button type="button" id="catalog-search" class="secondary">Topish</button></div></label>
+        <div class="eyebrow">YANGI SEANS</div><h2>Kino qo‘shish</h2><p class="muted">Video va nom — boshlash uchun yetarli.</p>
+        <label class="upload-zone">1. Video tanlash<input id="movie-file" type="file" accept="video/mp4" required><small>Telefon yoki kompyuterdan MP4 tanlang · 8 GB gacha</small></label>
+        <label>Botdan nom va tavsif olish (ixtiyoriy)<div class="inline"><input id="catalog-query" placeholder="Kino nomi yoki kodi"><button type="button" id="catalog-search" class="secondary">Topish</button></div></label>
         <div id="catalog-results"></div><input name="movie_code" type="hidden">
-        <label>Kino nomi<input name="title" required maxlength="160" placeholder="Masalan: Yulduzlar sari"></label>
-        <label>Qisqacha tavsif<textarea name="description" maxlength="1500" rows="3" placeholder="Bugungi seans nimasi bilan qiziq?"></textarea></label>
-        <div class="form-row"><label>Boshlanish vaqti<input name="starts" type="datetime-local" required></label><label>Davomiyligi (daqiqa)<input name="minutes" type="number" min="1" max="480" required value="120"></label></div>
+        <label>2. Kino nomi<input name="title" required maxlength="160" placeholder="Masalan: Yulduzlar sari"></label>
+        <details><summary>Vaqt, VIP va tavsifni sozlash</summary><label>Qisqacha tavsif<textarea name="description" maxlength="1500" rows="3" placeholder="Bugungi seans nimasi bilan qiziq?"></textarea></label>
+        <div class="form-row"><label>Boshlanish vaqti<input name="starts" type="datetime-local"></label><label>Davomiyligi (daqiqa)<input name="minutes" type="number" min="1" max="480" required value="120"></label></div>
         <label class="check"><input name="vip" type="checkbox"> Faqat VIP obunachilar uchun</label>
-        <label class="upload-zone">↑ Kinoni yuklash<input id="movie-file" type="file" accept="video/mp4" required><small>MP4 · 8 GB gacha · brauzerda ijro etiladigan H.264/AAC</small></label>
-        <p class="muted">Seans davomiyligini videoning haqiqiy uzunligiga moslang. Vaqt tugashi bilan barcha xonalarda tomosha yopiladi.</p>
+
+        <p class="muted">Boshlanish vaqtini bo‘sh qoldirsangiz, kino yuklangach boshlanadi. Davomiylik videodan avtomatik olinadi.</p></details>
         <progress id="upload-progress" max="100" value="0" hidden></progress><p id="upload-status" role="status"></p>
-        <button class="primary" id="publish-button" type="submit">Seansni rejalashtirish ↗</button>
+        <button class="primary" id="publish-button" type="submit">Kinoni qo‘shish ↗</button>
       </form>
       <div class="section-heading"><h2>Seanslar boshqaruvi</h2></div><div id="admin-screenings"></div>
       <div class="section-heading"><h2>Shikoyatlar</h2></div><div id="reports"></div>
