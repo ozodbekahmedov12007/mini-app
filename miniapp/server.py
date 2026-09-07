@@ -1,0 +1,289 @@
+import asyncio
+import hashlib
+import json
+import logging
+import os
+import secrets
+import time
+from collections import OrderedDict
+from pathlib import Path
+from urllib.parse import urlparse
+import aiohttp
+from aiohttp import web
+from miniapp.core import Store, Problem, admin
+from miniapp.storage import Storage
+
+log = logging.getLogger("miniapp")
+STATIC = Path(__file__).parent / "static"
+
+
+class Bridge:
+    def __init__(self, session):
+        self.session = session
+        self.cache = OrderedDict()
+        self.url = os.getenv("BOT_BRIDGE_URL", "").rstrip("/")
+        self.secret = os.getenv("MINIAPP_BRIDGE_SECRET", "")
+        self.pending = {}
+        self.slots = asyncio.Semaphore(8)
+
+    async def request(self, path, raw, **extra):
+        if not self.url or len(self.secret) < 32 or self.secret.startswith(("REPLACE_", "PASTE_")):
+            raise Problem("Bot bilan ulanish hali sozlanmagan", 503)
+        try:
+            async with self.session.post(self.url+"/miniapp/"+path,
+                headers={"Authorization": "Bearer "+self.secret},
+                json={"init_data": raw, **extra}) as response:
+                if response.status in (401,403):
+                    raise Problem("Telegram orqali qayta kiring yoki ruxsatingizni tekshiring", response.status)
+                if response.status != 200:
+                    raise Problem("Bot bilan aloqa vaqtincha ishlamayapti", 503)
+                return await response.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError):
+            raise Problem("Bot bilan aloqa vaqtincha ishlamayapti", 503)
+
+    async def identity(self, raw):
+        key = hashlib.sha256(raw.encode()).hexdigest()
+        hit = self.cache.get(key)
+        if hit and hit[0] > time.monotonic():
+            return hit[1]
+        if key not in self.pending:
+            if len(self.pending) >= 64:
+                raise Problem("Kirish navbati band. Biroz kuting", 429)
+            async def fetch():
+                try:
+                    async with self.slots:
+                        result = await self.request("identity", raw)
+                    self.cache[key] = (time.monotonic()+30, result)
+                    self.cache.move_to_end(key)
+                    while len(self.cache) > 2048:
+                        self.cache.popitem(last=False)
+                    return result
+                finally:
+                    self.pending.pop(key, None)
+            self.pending[key] = asyncio.create_task(fetch())
+        return await asyncio.shield(self.pending[key])
+
+
+@web.middleware
+async def errors(request, handler):
+    try:
+        response = await handler(request)
+    except Problem as exc:
+        response = web.json_response({"error": str(exc)}, status=exc.status)
+    except (ValueError, TypeError, KeyError, OverflowError):
+        response = web.json_response({"error": "So‘rov noto‘g‘ri"}, status=400)
+    except web.HTTPException:
+        raise
+    except Exception:
+        # No request body, tokens, presigned URLs or chat text in logs.
+        log.exception("Mini App request failed: %s", request.path)
+        response = web.json_response({"error": "Vaqtinchalik xato. Qayta urinib ko‘ring"}, status=503)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Cache-Control"] = "no-store" if request.path.startswith("/api") else "no-cache"
+    response.headers["Permissions-Policy"] = "camera=(self), microphone=(self)"
+    return response
+
+
+async def identity(request):
+    origin = request.headers.get("Origin")
+    if origin and origin != request.app["origin"]:
+        raise Problem("Boshqa saytdan so‘rovga ruxsat yo‘q", 403)
+    raw = request.headers.get("X-Telegram-Init-Data", "")
+    if not raw or len(raw)>16384:
+        raise Problem("Mini Appni Telegram bot orqali oching", 401)
+    # Bound unauthenticated bursts before hitting the bot bridge.
+    throttle(request.app, "token:"+hashlib.sha256(raw.encode()).hexdigest(), 300)
+    user = await request.app["bridge"].identity(raw)
+    throttle(request.app, "user:"+str(user["id"]), 180)
+    await db(request.app, "allowed", user)
+    return user
+
+
+def throttle(app, key, limit):
+    now = time.monotonic()
+    count, until = app["rates"].get(key, (0, now+60))
+    if until <= now:
+        count, until = 0, now+60
+    if count >= limit:
+        raise Problem("So‘rovlar ko‘paydi. Bir daqiqa kuting", 429)
+    app["rates"][key] = (count+1, until)
+    app["rates"].move_to_end(key)
+    while len(app["rates"]) > 8192:
+        app["rates"].popitem(last=False)
+
+
+async def db(app, method, *args, **kwargs):
+    return await asyncio.to_thread(app["store"].call, method, *args, **kwargs)
+
+
+async def emit(app, scope=None):
+    # Coalesce refreshes for slow clients; one pending notification per socket.
+    for ws, item in list(app["sockets"].items()):
+        if scope is None or item["scope"] == scope:
+            item["event"].set()
+
+
+async def api(request):
+    user = await identity(request)
+    app = request.app
+    path = request.match_info.get("path", "")
+    data = await request.json() if request.method == "POST" else {}
+    if not isinstance(data, dict):
+        raise Problem("So‘rov obyekt bo‘lishi kerak")
+    result = None
+    if request.method == "GET":
+        if path == "me":
+            result = {"user": user, "bot_username": app["bot_username"], "media_ready": bool(app["storage"].bucket)}
+        elif path == "screenings":
+            result = {"screenings": await db(app, "list_screenings", user)}
+        elif path == "room":
+            result = await db(app, "room", user, request.query.get("id", ""), heartbeat=True)
+        elif path == "messages":
+            result = {"messages": await db(app, "history", user, request.query.get("scope", "global"), request.query.get("before"))}
+        elif path == "playback":
+            result = await asyncio.to_thread(app["storage"].playback, user, request.query.get("room", ""))
+        elif path == "media":
+            result = await asyncio.to_thread(app["storage"].message_media, user, int(request.query.get("id", 0)))
+        elif path == "admin":
+            result = await db(app, "dashboard", user)
+        elif path == "catalog":
+            admin(user)
+            result = await app["bridge"].request("catalog", request.headers["X-Telegram-Init-Data"], query=request.query.get("q", ""))
+    elif request.method == "POST":
+        if path == "join":
+            result = await db(app, "join", user, data.get("screening"), data.get("room"), bool(data.get("private")))
+        elif path == "leave":
+            result = await db(app, "leave", user)
+        elif path == "control":
+            result = await db(app, "control", user, data.get("room", ""), data)
+            await emit(app, data.get("room"))
+        elif path == "message":
+            scope = str(data.get("scope", "global"))
+            result = await db(app, "send", user, scope, data)
+            await emit(app, scope)
+        elif path == "report":
+            result = await db(app, "report", user, data.get("scope", "global"), data)
+        elif path == "screening":
+            result = await db(app, "create_screening", user, data)
+            await emit(app)
+        elif path == "cancel":
+            result = await db(app, "cancel", user, data.get("id"))
+            await emit(app)
+        elif path == "moderate":
+            result = await db(app, "moderate", user, data)
+            await emit(app)
+        elif path == "upload/start":
+            result = await asyncio.to_thread(app["storage"].begin, user, data)
+        elif path == "upload/part":
+            result = await asyncio.to_thread(app["storage"].part, user, data.get("id"), data.get("number"))
+        elif path == "upload/complete":
+            result = await asyncio.to_thread(app["storage"].complete, user, data.get("id"))
+        elif path == "socket-ticket":
+            scope = data.get("scope", "global")
+            await db(app, "scope", user, scope)
+            now = time.monotonic()
+            for token, value in list(app["tickets"].items()):
+                if value[0] < now:
+                    del app["tickets"][token]
+            if len(app["tickets"]) >= 4096:
+                raise Problem("Ulanishlar band. Qayta urinib ko‘ring", 429)
+            ticket = secrets.token_urlsafe(24)
+            app["tickets"][ticket] = (now+20, request.headers["X-Telegram-Init-Data"], scope, user["id"])
+            result = {"ticket": ticket}
+    if result is None:
+        raise web.HTTPNotFound()
+    return web.json_response(result)
+
+
+async def socket(request):
+    if request.headers.get("Origin") != request.app["origin"]:
+        raise web.HTTPForbidden()
+    app = request.app
+    ticket = app["tickets"].pop(request.query.get("ticket", ""), None)
+    if not ticket or ticket[0] < time.monotonic():
+        raise web.HTTPUnauthorized()
+    _, raw, scope, uid = ticket
+    if sum(item["uid"] == uid for item in app["sockets"].values()) >= 3:
+        raise web.HTTPTooManyRequests()
+    ws = web.WebSocketResponse(heartbeat=25, max_msg_size=1024, compress=False)
+    await ws.prepare(request)
+    event = asyncio.Event()
+    app["sockets"][ws] = {"scope": scope, "uid": uid, "event": event}
+
+    async def pump():
+        while not ws.closed:
+            try:
+                await asyncio.wait_for(event.wait(), timeout=20)
+            except asyncio.TimeoutError:
+                pass
+            event.clear()
+            try:
+                user = await app["bridge"].identity(raw)
+                await db(app, "scope", user, scope)
+                await asyncio.wait_for(ws.send_json({"type": "refresh"}), timeout=5)
+            except (Problem, asyncio.TimeoutError):
+                await ws.close(code=4001, message=b"Rejoin required")
+                return
+            await asyncio.sleep(.2)
+    task = asyncio.create_task(pump())
+    try:
+        async for _ in ws:
+            pass  # Writes go through authenticated, rate-limited HTTP endpoints.
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        app["sockets"].pop(ws, None)
+    return ws
+
+
+async def lifecycle(app):
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+        if "bridge" not in app:
+            app["bridge"] = Bridge(session)
+
+        async def clean():
+            while True:
+                await asyncio.sleep(3600)
+                try:
+                    await asyncio.to_thread(app["storage"].cleanup)
+                    await db(app, "rows", "DELETE FROM members WHERE seen<?", (time.time()-75,))
+                except Exception:
+                    log.exception("Media cleanup failed")
+        task = asyncio.create_task(clean())
+        yield
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        await asyncio.gather(*(ws.close(code=1001) for ws in list(app["sockets"])))
+        app["store"].db.close()
+
+
+async def health(request):
+    return web.json_response({"ok": True})
+
+
+async def index(request):
+    return web.FileResponse(STATIC / "index.html")
+
+
+def create_app(store=None, bridge=None, storage=None, origin=None):
+    app = web.Application(middlewares=[errors], client_max_size=20000)
+    app["store"] = store or Store(os.getenv("MINIAPP_DB", "/data/miniapp.sqlite"))
+    app["storage"] = storage or Storage(app["store"])
+    app["origin"] = (origin or os.getenv("PUBLIC_ORIGIN", "http://127.0.0.1:8080")).rstrip("/")
+    app["bot_username"] = os.getenv("BOT_USERNAME", "").lstrip("@")
+    app["sockets"], app["tickets"] = {}, {}
+    app["rates"] = OrderedDict()
+    if bridge:
+        app["bridge"] = bridge
+    app.cleanup_ctx.append(lifecycle)
+    app.router.add_get("/health", health)
+    app.router.add_route("*", "/api/{path:.*}", api)
+    app.router.add_get("/ws", socket)
+    app.router.add_get("/", index)
+    app.router.add_static("/static/", STATIC, show_index=False)
+    return app
+
+
+if __name__ == "__main__":
+    web.run_app(create_app(), host="0.0.0.0", port=int(os.getenv("PORT", "8080")), access_log=None)
