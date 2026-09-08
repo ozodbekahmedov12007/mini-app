@@ -135,6 +135,7 @@ async def api(request):
     result = None
     if request.method == "GET":
         if path == "me":
+            await db(app, "profile_identity", user)
             result = {"user": user, "bot_username": app["bot_username"], "media_ready": bool(app["storage"].bucket), "telegram_ready": app["telegram"].configured}
         elif path == "screenings":
             result = {"screenings": await db(app, "list_screenings", user)}
@@ -150,12 +151,54 @@ async def api(request):
             result = await asyncio.to_thread(app["storage"].message_media, user, int(request.query.get("id", 0)))
         elif path == "admin":
             result = await db(app, "dashboard", user)
+        elif path == "admin/room":
+            result = await db(app, "admin_room", user, request.query.get("id", ""))
+        elif path == "social":
+            result = await db(app, "social", user)
+        elif path == "poll":
+            result = await db(app, "poll", user, request.query.get("room", ""))
+        elif path == "diagnostics":
+            admin(user)
+            result = {"errors": await db(app, "diagnostic_list", user),
+                      "telegram_configured": app["telegram"].configured,
+                      "uploads_configured": bool(app["storage"].bucket),
+                      "streams": sum(app["telegram"].active.values())}
         elif path == "catalog":
             admin(user)
             result = await app["bridge"].request("catalog", request.headers["X-Telegram-Init-Data"], query=request.query.get("q", ""))
     elif request.method == "POST":
         if path == "join":
-            result = await db(app, "join", user, data.get("screening"), data.get("room"), bool(data.get("private")))
+            result = await db(app, "join", user, data.get("screening"), data.get("room"), bool(data.get("private")), bool(data.get("locked")))
+        elif path == "friend":
+            throttle(app, "friend:"+str(user["id"]), 20)
+            result = await db(app, "friend_action", user, data)
+        elif path == "favorite":
+            result = await db(app, "favorite", user, data)
+        elif path == "room/request":
+            throttle(app, "admission:"+str(user["id"]), 20)
+            result = await db(app, "request_access", user, str(data.get("room", "")))
+            await emit(app, data.get("room"))
+        elif path == "room/access":
+            result = await db(app, "access_action", user, data)
+            await emit(app, data.get("room"))
+        elif path == "room/invite":
+            throttle(app, "invite:"+str(user["id"]), 20)
+            result = await db(app, "invite_friend", user, data)
+        elif path == "vote":
+            result = await db(app, "vote", user, data)
+            await emit(app, data.get("room"))
+        elif path == "diagnostic":
+            throttle(app, "diagnostic:"+str(user["id"]), 10)
+            result = await db(app, "diagnostic", user, data)
+        elif path == "diagnostics/check":
+            admin(user)
+            throttle(app, "media-check:"+str(user["id"]), 2)
+            try:
+                client = await app["telegram"].connect()
+                valid = await asyncio.wait_for(client.is_user_authorized(), 10)
+                result = {"ok": bool(valid), "message": "Telegram sessiyasi ishlayapti" if valid else "Telegram sessiyasini yangilang"}
+            except Exception:
+                result = {"ok": False, "message": "Telegramga ulanish tekshiruvdan o‘tmadi. TG sozlamalari va tarmoqni tekshiring."}
         elif path == "leave":
             result = await db(app, "leave", user)
         elif path == "control":

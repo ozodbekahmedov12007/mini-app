@@ -10,7 +10,7 @@
 <body>
   <header class="topbar"><a class="brand" href="/" aria-label="Bosh sahifa"><span class="brand-mark">▶</span> MovieRay<span class="brand-light">CLUB</span></a><button id="profile-button" class="avatar" aria-label="Profil">K</button></header>
   <main>
-    <div id="notice" role="status" hidden></div>
+    <div id="notice" role="status" hidden></div><div id="refresh-hint" role="status" hidden>Yangilash uchun qo‘yib yuboring ↓</div>
     <section id="view-home" class="view">
       <div class="home-hero">
         <div class="eyebrow">MOVIERAY / BIRGALIKDA TOMOSHA</div>
@@ -18,7 +18,7 @@
         <p class="intro">Yaxshi kino. Yaqin do‘stlar.<br>Barchasi bitta xonada.</p>
         <div class="hero-tags"><span>20 kishigacha</span><span>Bir vaqtda tomosha</span></div>
       </div>
-      <div class="section-heading"><h2>Kino seanslari</h2><span id="screening-count" class="pill">JADVAL</span></div>
+      <button id="create-room-home" class="primary room-create">＋ Do‘stlar uchun kabinet yaratish</button><p class="muted room-help">Quyidagi kinodan shaxsiy kabinet oching va havolasini do‘stlaringizga yuboring.</p><div class="section-heading" id="seance-list"><h2>Kino seanslari</h2><span id="screening-count" class="pill">JADVAL</span></div>
       <div id="screenings" class="cards"><div class="empty">Seanslar yuklanmoqda…</div></div>
       <button id="community-link" class="community-card"><span class="community-icon">↗</span><span><strong>Umumiy suhbat</strong><small>Do‘stlar va kino haqidagi fikrlar →</small></span></button>
     </section>
@@ -30,19 +30,30 @@
     <section id="view-room" class="view" hidden>
       <button id="leave-room" class="text-button">← Xonadan chiqish</button>
       <div class="section-heading"><h2 id="room-title">Kino xonasi</h2><span id="room-count" class="pill">0 / 20</span></div>
-      <div class="player-wrap"><video id="player" playsinline preload="metadata" controlslist="nodownload noremoteplayback" disablepictureinpicture></video><button id="start-player" class="play-overlay">▶ Tomoshani boshlash</button></div>
+      <div class="room-tools"><button id="private-room" class="secondary">＋ Shaxsiy kabinet</button><button id="fullscreen-player" class="secondary">⛶ To‘liq ekran</button></div><div class="player-wrap" id="player-wrap"><button id="exit-theater" class="secondary" hidden>✕ Kichraytirish</button><video id="player" playsinline preload="metadata" controlslist="nodownload noremoteplayback" disablepictureinpicture></video><button id="start-player" class="play-overlay">▶ Tomoshani boshlash</button></div>
       <div id="owner-controls" class="owner-controls" hidden><button id="toggle-play" class="secondary">▶ / Ⅱ</button><input id="seek" type="range" min="0" max="100" value="0" aria-label="Kino vaqti"><span id="position-label">0:00</span></div>
       <div class="room-meta"><div id="members" class="members"></div><button id="share-room" class="secondary">↗ Do‘stni chaqirish</button></div>
-      <p id="room-status" class="muted"></p><div id="room-chat" class="chat-shell"></div>
+      <input id="room-invite" readonly aria-label="Kabinet havolasi" hidden><p id="room-status" class="muted"></p><div id="room-access-tools"></div><div id="room-chat" class="chat-shell"></div>
+      <details id="room-friends-panel" class="panel compact-panel"><summary>Do‘stni kabinetga taklif qilish</summary><div id="room-friends"></div></details>
+      <details id="room-poll-panel" class="panel compact-panel"><summary>Keyingi kinoni tanlaymiz</summary><p class="muted">Har kim bitta ovoz beradi va tanlovini almashtira oladi. Natija kinoni avtomatik almashtirmaydi.</p><div id="room-poll"></div></details>
     </section>
     <section id="view-profile" class="view" hidden>
       <div class="eyebrow">SIZNING KINO CLUBINGIZ</div><h1 class="small-title">Mening profilim</h1>
       <div id="profile-card" class="panel"></div>
-      <div class="panel"><h3>Qulay va xotirjam suhbat</h3><p class="muted">Ovozli xabar — 8 MB gacha. Dumaloq video — 20 MB gacha. Yozib olish 60 soniyada to‘xtaydi.</p><p class="muted">Ovoz va videolar 7 kun saqlanadi. Matnli suhbat seans tugaganidan keyin ham qoladi.</p></div>
+      <div id="social-loading" role="status"></div>
+      <div class="panel compact-panel"><div class="section-heading"><h2>Do‘stlarim</h2><button id="social-refresh" class="secondary" type="button">↻</button></div>
+        <details id="add-friend-panel"><summary>＋ Do‘st qo‘shish</summary><label>Mening do‘st kodim<input id="friend-code" readonly></label><button id="copy-friend-code" class="secondary" type="button">Kodni nusxalash</button>
+        <form id="friend-form"><label>Do‘stingizning kodi<input id="friend-input" required maxlength="100" placeholder="Do‘st kodini kiriting" autocapitalize="off"></label><button class="primary" type="submit">Do‘stlik so‘rovi yuborish</button></form></details>
+        <div id="friend-requests"></div><div id="friends-list"></div><div id="friend-sent"></div>
+      </div>
+      <details class="panel compact-panel" open><summary>Kabinetlar va takliflar</summary><div id="my-rooms"></div><div id="my-invitations"></div></details>
+      <details class="panel compact-panel"><summary>♥ Sevimli kinolar</summary><div id="my-favorites"></div></details>
+      <details class="panel compact-panel"><summary>Ko‘rish tarixi</summary><p class="muted">Siz kirgan seanslar. Kino to‘liq ko‘rilganini bildirmaydi.</p><div id="my-history"></div></details>
+      <div class="panel" id="media-profile-help"><h3>Qulay va xotirjam suhbat</h3><p class="muted">Ovozli xabar — 8 MB gacha. Dumaloq video — 20 MB gacha. Yozib olish 60 soniyada to‘xtaydi.</p><p class="muted">Ovoz va videolar 7 kun saqlanadi. Matnli suhbat seans tugaganidan keyin ham qoladi.</p></div>
     </section>
     <section id="view-admin" class="view" hidden>
       <div class="eyebrow">BOSHQARUV</div><h1 class="small-title">Admin panel</h1>
-      <div class="admin-stats"><div><strong id="online-count">0</strong><small>Xonalarda hozir</small></div><div><strong id="admin-seance-count">0</strong><small>Seanslar</small></div></div>
+      <div class="admin-stats"><div><strong id="online-count">0</strong><small>Xonalarda hozir</small></div><div><strong id="admin-seance-count">0</strong><small>Oxirgi seanslar</small></div><div><strong id="admin-room-count">0</strong><small>Faol xonalar</small></div><div><strong id="admin-message-count">0</strong><small>Chat xabarlari</small></div></div><div class="admin-shortcuts"><button type="button" class="secondary" id="admin-refresh">↻ Yangilash</button><a href="#screening-form">＋ Kino qo‘shish</a><a href="#admin-rooms">Xonalar ↓</a></div><p id="admin-updated" class="muted"></p>
       <form id="screening-form" class="panel">
         <div class="eyebrow">YANGI SEANS</div><h2>Kino qo‘shish</h2><p class="muted">Botdagi kino kodini kiriting, topilgan kinoni tanlang va boshlang.</p>
 
@@ -54,14 +65,17 @@
         <label class="check"><input name="vip" type="checkbox"> Faqat VIP obunachilar uchun</label>
 
         <p class="muted">Boshlanish vaqtini bo‘sh qoldirsangiz, kino yuklangach boshlanadi. Davomiylik videodan avtomatik olinadi.</p></details>
-        <details><summary>Yoki yangi video fayl yuklash</summary>        <label class="upload-zone">1. Video tanlash<input id="movie-file" type="file" accept="video/mp4"><small>Telefon yoki kompyuterdan MP4 tanlang · 8 GB gacha</small></label><p class="muted">Fayl yuklash uchun alohida media xizmati kerak. Botdagi kino uchun fayl tanlamang.</p></details>
+        <details id="file-upload-options"><summary>Yoki yangi video fayl yuklash</summary>        <label class="upload-zone">1. Video tanlash<input id="movie-file" type="file" accept="video/mp4"><small>Telefon yoki kompyuterdan MP4 tanlang · 8 GB gacha</small></label><p class="muted">Fayl yuklash uchun alohida media xizmati kerak. Botdagi kino uchun fayl tanlamang.</p></details>
         <progress id="upload-progress" max="100" value="0" hidden></progress><p id="upload-status" role="status"></p>
         <button class="primary" id="publish-button" type="submit">Kinoni qo‘shish ↗</button>
       </form>
-      <div class="section-heading"><h2>Seanslar boshqaruvi</h2></div><div id="admin-screenings"></div>
+      <div class="section-heading"><h2>Faol xonalar</h2></div><p class="muted">Admin xonaga qatnashchi sifatida kiradi. Yopiq kabinetda egasining ruxsati, VIP va 20 kishilik limit saqlanadi.</p><div id="admin-rooms"></div><div id="admin-room-detail" class="panel" hidden></div>
+      <div class="section-heading"><h2>Seanslar boshqaruvi</h2></div><div id="admin-screenings"></div><p class="muted">Ishtirokchilar — yangilanishdan keyingi noyob kirganlar soni; to‘liq ko‘rib tugatganlar soni emas.</p><details class="panel"><summary>Admin amallari tarixi</summary><div id="admin-audit"></div></details>
       <div class="section-heading"><h2>Shikoyatlar</h2></div><div id="reports"></div>
+      <details class="panel compact-panel" id="diagnostics-panel"><summary>Video va ulanish holati</summary><div id="diagnostics-status"></div><button type="button" class="secondary" id="check-telegram">Telegram ulanishini tekshirish</button><p id="check-result" role="status"></p><div id="diagnostics-errors"></div></details>
       <form id="restriction-form" class="panel"><h3>Foydalanuvchini cheklash</h3><label>Telegram ID<input name="user_id" inputmode="numeric" required></label><label>Muddat (soat, 0 — cheklovni olish)<input name="hours" type="number" min="0" max="8760" value="24" required></label><label class="check"><input name="banned" type="checkbox"> Mini Appga kirishni ham cheklash</label><button class="secondary">Saqlash</button></form>
     </section>
+    <section id="view-waiting" class="view" hidden><div class="panel"><h2>Yopiq kabinet</h2><p id="waiting-status" role="status">Egasining ruxsati kutilmoqda.</p><button id="check-admission" class="primary" type="button">Ruxsatni tekshirish</button><button id="cancel-admission" class="secondary" type="button">Bosh sahifaga</button></div></section>
     <section id="view-login" class="view" hidden><div class="panel"><div class="eyebrow">TELEGRAM MINI APP</div><h1 class="small-title">Kino Clubga<br>xush kelibsiz.</h1><p>Profilingiz va VIP obunangizni aniqlash uchun ushbu sahifani Telegram botdagi Mini App tugmasi orqali oching.</p><p class="muted">Kino seanslari · 20 kishilik xonalar · Doimiy chat</p></div></section>
   </main>
   <nav class="bottom-nav" aria-label="Asosiy menyu"><button data-view="home" class="active"><span>◈</span>Seanslar</button><button data-view="chat"><span>☷</span>Suhbat</button><button data-view="profile"><span>◉</span>Profil</button><button data-view="admin" id="admin-nav" hidden><span>⚙</span>Admin</button></nav>
