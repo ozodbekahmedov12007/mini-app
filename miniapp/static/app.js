@@ -18,6 +18,7 @@ async function api(path,body,signal) {const r=await fetch('/api/'+path,{signal,m
 async function show(view) {
   if(!state.user&&view!=='login')return;
   if(view==='admin'&&!state.user?.admin)return;
+  if(state.view==='room'&&view!=='room'){$('player').pause();state.view=view;await closeTheater();}
   state.view=view;document.body.classList.toggle('watching-room',view==='room');
   for(const el of document.querySelectorAll('.view'))el.hidden=el.id!=='view-'+view;
   for(const el of document.querySelectorAll('[data-view]'))el.classList.toggle('active',el.dataset.view===view);
@@ -26,7 +27,7 @@ async function show(view) {
   if(view==='chat')await openChat('global-chat','global');
   if(view==='admin')await dashboard();
   if(view==='profile'){profile();await loadSocial();}
-  if(view==='room'&&state.room)await openChat('room-chat',state.room.id);
+  if(view==='room'&&state.room){await tickRoom();await openChat('room-chat',state.room.id);}
 }
 for(const el of document.querySelectorAll('[data-view]'))el.onclick=()=>show(el.dataset.view).catch(e=>notify(e.message));
 $('community-link').onclick=()=>show('chat').catch(e=>notify(e.message));
@@ -62,7 +63,7 @@ function renderRoom(room){
   syncPlayer(room);
 }
 function updateVideoClock(){const p=$('player');$('position-label').textContent=duration(p.currentTime||0)+' / '+duration(Number.isFinite(p.duration)?p.duration:(state.room?.duration||0));if(document.activeElement!==$('seek'))$('seek').value=Math.floor(p.currentTime||0);}
-function syncPlayer(room){const p=$('player');if(!state.mediaLoaded)return;if(!p.seeking&&(state.needsSeek||p.readyState>=3)&&Math.abs(p.currentTime-room.position)>2.5)p.currentTime=room.position;state.needsSeek=false;if(room.playing){p.play().then(()=>$('start-player').hidden=true).catch(error=>{if(error.name==='NotAllowedError'){clearVideoLoading();$('start-player').hidden=false;state.autoplayBlocked=true;}});}else p.pause();}
+function syncPlayer(room){const p=$('player');if(!state.mediaLoaded||state.view!=='room')return;if(!p.seeking&&(state.needsSeek||p.readyState>=3)&&Math.abs(p.currentTime-room.position)>2.5)p.currentTime=room.position;state.needsSeek=false;if(room.playing){p.play().then(()=>$('start-player').hidden=true).catch(error=>{if(error.name==='NotAllowedError'){clearVideoLoading();$('start-player').hidden=false;state.autoplayBlocked=true;}});}else p.pause();}
 let playbackRequest=null;
 async function loadPlayback(){
  const rid=state.room?.id;if(!rid)return;
@@ -103,12 +104,16 @@ function profile(){const card=$('profile-card');card.replaceChildren();const who
 function closeSocket(){state.generation++;if(state.socket){state.socket.onclose=null;state.socket.close();state.socket=null;}state.chat=null;}
 async function openChat(target,scope){
   const shell=$(target);shell.replaceChildren();const messages=node('div','chat-messages'),compose=node('form','chat-compose'),reply=node('div','reply-label');reply.hidden=true;
-  const input=node('textarea');input.placeholder='Suhbatga qo‘shiling…';input.rows=1;input.maxLength=2000;input.setAttribute('aria-label','Xabar matni');
+  const input=node('textarea');input.placeholder='Xabar yozing…';input.rows=1;input.maxLength=500;input.setAttribute('aria-label','Xabar matni');
   const controls=node('div','compose-buttons'),media=node('div');media.hidden=!state.mediaReady;const file=node('input');file.type='file';file.hidden=true;
   media.append(button('🎙','secondary',()=>record('voice')),button('◉','secondary',()=>record('round')),button('＋','secondary',()=>{file.accept='audio/*,video/*';file.click();}));
-  const send=node('button','primary','Yuborish ↑');send.type='submit';controls.append(media,send);compose.append(reply,input,controls,file);shell.append(messages,compose);
+  const send=node('button','primary','Yuborish ↑');send.type='submit';const count=node('small','chat-count','0 / 500');input.oninput=()=>count.textContent=input.value.length+' / 500';
+  const stickers=node('div','sticker-picker');stickers.hidden=true;
+  for(const [id,label] of [['happy','Xursand'],['love','Sevgi'],['wow','Hayrat']]){const pick=button('','sticker-pick',()=>{input.value='[sticker:'+id+']';input.oninput();stickers.hidden=true;compose.requestSubmit();});pick.setAttribute('aria-label',label);const img=node('img');img.src='/static/sticker-'+id+'.svg';img.alt=label;pick.append(img);stickers.append(pick);}
+  controls.append(button('☺ Stiker','secondary',()=>stickers.hidden=!stickers.hidden),media,count,send);compose.append(stickers);compose.append(reply,input,controls,file);shell.append(messages,compose);
   const chat={scope,messages,reply,input,replyTo:null,loading:false,history:[],nodes:new Map(),generation:state.generation};state.chat=chat;
-  compose.onsubmit=async e=>{e.preventDefault();if(!input.value.trim())return;send.disabled=true;try{await api('message',{scope,text:input.value,reply_to:chat.replyTo});input.value='';chat.replyTo=null;reply.hidden=true;await refreshChat(chat);}catch(err){notify(err.message);}finally{send.disabled=false;}};
+  compose.onsubmit=async e=>{e.preventDefault();if(!input.value.trim()||send.disabled)return;send.disabled=true;try{await api('message',{scope,text:input.value,reply_to:chat.replyTo});input.value='';input.oninput();chat.replyTo=null;reply.hidden=true;await refreshChat(chat);}catch(err){notify(err.message);}finally{send.disabled=false;}};
+  input.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing&&matchMedia('(pointer:fine)').matches){e.preventDefault();compose.requestSubmit();}};
   file.onchange=async()=>{const selected=file.files[0];if(!selected)return;try{await sendMedia(selected,selected.type.startsWith('audio/')?'voice':'round',chat);}catch(e){notify(e.message);}file.value='';};
   await refreshChat(chat);await connectChat(chat);
 }
@@ -135,7 +140,8 @@ async function refreshChat(chat,older=false){
 }
 function renderMessage(m,chat){
   const line=node('div','chat-message'),body=node('div','message-body'),author=node('div','message-author',m.name);author.append(node('time','',new Date(m.created*1000).toLocaleTimeString('uz-UZ',{hour:'2-digit',minute:'2-digit'})));line.append(avatar(m),body);body.append(author);
-  if(m.reply_to)body.append(node('small','muted',`↳ #${m.reply_to} xabarga javob`));body.append(node('p','message-text',m.deleted?'Xabar o‘chirilgan':m.text));
+  if(m.reply_to){const original=chat.history.find(item=>item.id===m.reply_to);const quote=node('div','reply-quote');quote.append(node('strong','',m.reply_name||original?.name||'Foydalanuvchi'),node('small','',m.reply_text||original?.text?.slice(0,80)||'Xabarga javob'));body.append(quote);}
+  const sticker=/^\[sticker:(happy|love|wow)\]$/.exec(m.text||'');if(sticker&&!m.deleted){const img=node('img','chat-sticker');img.src='/static/sticker-'+sticker[1]+'.svg';img.alt='Stiker: '+sticker[1];body.append(img);}else body.append(node('p','message-text',m.deleted?'Xabar o‘chirilgan':m.text));
   if(m.asset_id&&!m.deleted){const load=button('▶ Ovoz / videoni ochish','secondary',async()=>{load.disabled=true;try{const data=await api('media?id='+m.id),player=node(data.kind==='voice'?'audio':'video',data.kind==='voice'?'voice-audio':'round-video');player.controls=true;player.playsInline=true;player.preload='none';player.src=data.url;load.replaceWith(player);await player.play().catch(()=>{});}finally{load.disabled=false;}});body.append(load);}
   if(!m.deleted){const actions=node('div','message-actions');actions.append(button('Javob','',()=>{chat.replyTo=m.id;chat.reply.replaceChildren(node('span','',`${m.name} ga javob`),button('×','',()=>{chat.reply.hidden=true;chat.replyTo=null;}));chat.reply.hidden=false;chat.input.focus();}),button('Shikoyat','',async()=>{await api('report',{scope:chat.scope,message_id:m.id,reason:'Foydalanuvchi shikoyati'});notify('Shikoyat adminga yuborildi');}));if(state.user.admin)actions.append(button('O‘chirish','',async()=>{await api('moderate',{message_id:m.id});await refreshChat(chat);}));body.append(actions);}
   return line;

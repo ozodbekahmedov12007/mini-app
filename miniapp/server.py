@@ -36,6 +36,8 @@ class Bridge:
                 json={"init_data": raw, **extra}) as response:
                 if response.status in (401,403):
                     raise Problem("Telegram orqali qayta kiring yoki ruxsatingizni tekshiring", response.status)
+                if response.status == 404:
+                    raise Problem("Kino manbasi topilmadi. Admin botdagi kino faylini tekshirsin.",404)
                 if response.status != 200:
                     raise Problem("Bot bilan aloqa vaqtincha ishlamayapti", 503)
                 return await response.json()
@@ -173,6 +175,9 @@ async def api(request):
             throttle(app,"cabinet-create:"+str(user["id"]),5)
             source=await app["bridge"].request("source",request.headers["X-Telegram-Init-Data"],code=data.get("code"))
             result=await app["telegram"].create_cabinet(app,user,source,data)
+        elif path == "cabinet/finish":
+            result=await db(app,"finish_cabinet",user,str(data.get("room","")))
+            await emit(app,data.get("room"))
         elif path == "cabinet/close":
             result=await db(app,"close_cabinet",user,str(data.get("room","")))
             await emit(app,data.get("room"))
@@ -280,11 +285,12 @@ async def socket(request):
                 await asyncio.wait_for(event.wait(), timeout=20)
             except asyncio.TimeoutError:
                 pass
+            changed = event.is_set()
             event.clear()
             try:
                 user = await app["bridge"].identity(raw)
                 await db(app, "scope", user, scope)
-                await asyncio.wait_for(ws.send_json({"type": "refresh"}), timeout=5)
+                await asyncio.wait_for(ws.send_json({"type": "refresh", "changed": changed}), timeout=5)
             except (Problem, asyncio.TimeoutError):
                 await ws.close(code=4001, message=b"Rejoin required")
                 return

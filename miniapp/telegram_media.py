@@ -135,7 +135,8 @@ class TelegramMedia:
         if len(self.tickets) >= 4096:
             raise Problem('Video ulanishlari band', 429)
         ttl = max(1, min(120, int(room['ends']-time.time())))
-        token = secrets.token_urlsafe(32)
+        token = next((key for key, value in self.tickets.items()
+                      if value['uid'] == user['id'] and value['rid'] == rid and value['raw'] == raw), None) or secrets.token_urlsafe(32)
         self.tickets[token] = {'until': now+ttl, 'raw': raw, 'rid': rid,
             'uid': user['id'], 'source': json.loads(asset['object_key'])}
         return {'url': '/telegram-video/'+token, 'expires_in': ttl, 'room': room}

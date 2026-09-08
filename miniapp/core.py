@@ -245,6 +245,17 @@ class Store:
                         (position, int(bool(data.get("playing"))), self.clock(), rid))
         return self.room(user, rid)
 
+    def finish_cabinet(self, user, rid):
+        room = self.room(user, rid, heartbeat=True)
+        if not room['personal'] or room['owner'] != user['id']:
+            raise Problem('Faqat kabinet egasi yakunlaydi', 403)
+        # Repeated ended notifications must never extend the deadline.
+        self.db.execute('UPDATE screenings SET ends=MIN(ends,?) WHERE id=?',
+                        (self.clock()+60, room['screening_id']))
+        self.db.execute('UPDATE rooms SET playing=0,position=?,updated=? WHERE id=?',
+                        (room['duration'], self.clock(), rid))
+        return self.room(user, rid)
+
     def leave(self, user):
         self.db.execute("DELETE FROM members WHERE user_id=?", (user["id"],))
         return {"ok": True}
@@ -257,15 +268,15 @@ class Store:
     def history(self, user, scope, before=None):
         self.scope(user, scope)
         upper = integer(before, 1, 2**63-1) if before else 2**63-1
-        return list(reversed(self.rows("SELECT id,user_id,name,photo,text,asset_id,reply_to,created,deleted FROM messages WHERE scope=? AND id<? ORDER BY id DESC LIMIT 50", (scope, upper))))
+        return list(reversed(self.rows("SELECT m.id,m.user_id,m.name,m.photo,m.text,m.asset_id,m.reply_to,m.created,m.deleted,r.name reply_name,CASE WHEN r.deleted=0 THEN substr(r.text,1,80) ELSE 'Xabar o‘chirilgan' END reply_text FROM messages m LEFT JOIN messages r ON r.id=m.reply_to AND r.scope=m.scope WHERE m.scope=? AND m.id<? ORDER BY m.id DESC LIMIT 50", (scope, upper))))
 
     def send(self, user, scope, data):
         self.scope(user, scope)
         self.allowed(user, writing=True)
         text = str(data.get("text", "")).strip()
         aid = data.get("asset_id") or None
-        if len(text) > 2000 or (not text and not aid):
-            raise Problem("Xabar 1–2000 belgi bo‘lsin")
+        if len(text) > 500 or (not text and not aid):
+            raise Problem("Xabar 1–500 belgi bo‘lsin")
         if self.one("SELECT COUNT(*) n FROM messages WHERE user_id=? AND created>?", (user["id"], self.clock()-10))["n"] >= 5:
             raise Problem("Biroz kuting: 10 soniyada 5 ta xabar", 429)
         if aid:
@@ -335,7 +346,7 @@ class Store:
 
     def my_cabinets(self, user):
         self.allowed(user)
-        return self.rows("SELECT r.id,r.name title,s.title movie_title,r.locked FROM rooms r JOIN screenings s ON s.id=r.screening WHERE r.owner=? AND s.personal=1 AND s.cancelled=0 ORDER BY r.created DESC LIMIT 10", (user['id'],))
+        return self.rows("SELECT r.id,r.name title,s.title movie_title,r.locked FROM rooms r JOIN screenings s ON s.id=r.screening WHERE r.owner=? AND s.personal=1 AND s.cancelled=0 AND s.ends>? ORDER BY r.created DESC LIMIT 10", (user['id'],self.clock()))
 
     def create_cabinet(self, user, name, source, aid, duration):
         self.allowed(user, writing=True)
