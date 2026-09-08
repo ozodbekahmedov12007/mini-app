@@ -62,7 +62,7 @@ function renderRoom(room){
   syncPlayer(room);
 }
 function updateVideoClock(){const p=$('player');$('position-label').textContent=duration(p.currentTime||0)+' / '+duration(Number.isFinite(p.duration)?p.duration:(state.room?.duration||0));if(document.activeElement!==$('seek'))$('seek').value=Math.floor(p.currentTime||0);}
-function syncPlayer(room){const p=$('player');if(!state.mediaLoaded)return;if(!p.seeking&&(state.needsSeek||p.readyState>=3)&&Math.abs(p.currentTime-room.position)>2.5)p.currentTime=room.position;state.needsSeek=false;if(room.playing){p.play().then(()=>$('start-player').hidden=true).catch(()=>$('start-player').hidden=false);}else p.pause();}
+function syncPlayer(room){const p=$('player');if(!state.mediaLoaded)return;if(!p.seeking&&(state.needsSeek||p.readyState>=3)&&Math.abs(p.currentTime-room.position)>2.5)p.currentTime=room.position;state.needsSeek=false;if(room.playing){p.play().then(()=>$('start-player').hidden=true).catch(error=>{if(error.name==='NotAllowedError'){clearVideoLoading();$('start-player').hidden=false;state.autoplayBlocked=true;}});}else p.pause();}
 let playbackRequest=null;
 async function loadPlayback(){
  const rid=state.room?.id;if(!rid)return;
@@ -75,7 +75,7 @@ async function loadPlayback(){
   state.playbackExpiry=Date.now()+data.expires_in*1000;
   const p=$('player');state.mediaLoaded=false;
   p.onloadedmetadata=()=>{if(state.room?.id===rid){state.mediaLoaded=true;state.needsSeek=true;syncPlayer(state.room);}};
-  p.src=data.url;renderRoom(data.room);
+  state.autoplayBlocked=false;p.src=data.url;p.load();renderRoom(data.room);
  }catch(e){
   if(state.room?.id!==rid||playbackRequest!==request)return;
   reportVideo('playback_unavailable');
@@ -384,13 +384,13 @@ $('retry-video').onclick=()=>{recoveryAttempts=0;clearVideoLoading();loadPlaybac
 const watchedVideo=$('player');
 for(const event of ['loadstart','waiting','seeking'])watchedVideo.addEventListener(event,()=>videoLoading(event==='loadstart'?'Video yuklanmoqda…':'Video yuklanishi kutilmoqda…'));
 watchedVideo.addEventListener('stalled',()=>{if(watchedVideo.readyState<3)videoLoading();});
-watchedVideo.addEventListener('playing',()=>{videoLastProgress=Date.now();clearVideoLoading();});
+watchedVideo.addEventListener('playing',()=>{state.autoplayBlocked=false;videoLastProgress=Date.now();clearVideoLoading();});
 watchedVideo.addEventListener('canplay',()=>{videoLastProgress=Date.now();clearVideoLoading();});
 watchedVideo.addEventListener('seeked',()=>{if(watchedVideo.readyState>=3)clearVideoLoading();});
 watchedVideo.addEventListener('timeupdate',()=>{updateVideoClock();if(Math.abs(watchedVideo.currentTime-videoLastTime)>.05){videoLastTime=watchedVideo.currentTime;videoLastProgress=Date.now();if(!watchedVideo.seeking&&watchedVideo.readyState>=3)clearVideoLoading();}});
 watchedVideo.addEventListener('ended',async()=>{clearVideoLoading();if(state.room?.personal&&state.room.owner===state.user.id){try{renderRoom(await api('cabinet/finish',{room:state.room.id}));}catch(e){notify(e.message);}}});
 setInterval(()=>{const r=state.room;const box=$('room-countdown');box.hidden=!(r?.personal&&r.ends<253402300799);if(!box.hidden)box.textContent='Kino tugadi. Kabinet '+Math.max(0,Math.ceil(r.ends-Date.now()/1000-(state.serverOffset||0)))+' soniyadan keyin yopiladi.';},1000);
-setInterval(()=>{if(state.room&&state.view==='room'&&state.room.playing&&!watchedVideo.paused&&!watchedVideo.ended&&!document.hidden&&Date.now()-videoLastProgress>6000){videoLoading();if(Date.now()-videoLastProgress>20000)scheduleVideoRecovery();}},2000);
+setInterval(()=>{if(state.room&&state.view==='room'&&state.room.playing&&!state.autoplayBlocked&&(!state.mediaLoaded||watchedVideo.readyState<3||!watchedVideo.paused)&&!watchedVideo.ended&&!document.hidden&&Date.now()-videoLastProgress>6000){videoLoading();if(Date.now()-videoLastProgress>20000)scheduleVideoRecovery();}},2000);
 
 // Visual viewport follows the mobile keyboard without shrinking the video itself.
 let viewportFrame=0;
