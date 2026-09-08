@@ -1,2 +1,4 @@
 aiohttp==3.13.3
 boto3==1.43.89
+
+Telethon==1.44.0

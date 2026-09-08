@@ -12,6 +12,7 @@ import aiohttp
 from aiohttp import web
 from miniapp.core import Store, Problem, admin
 from miniapp.storage import Storage
+from miniapp.telegram_media import TelegramMedia
 
 log = logging.getLogger("miniapp")
 STATIC = Path(__file__).parent / "static"
@@ -134,7 +135,7 @@ async def api(request):
     result = None
     if request.method == "GET":
         if path == "me":
-            result = {"user": user, "bot_username": app["bot_username"], "media_ready": bool(app["storage"].bucket)}
+            result = {"user": user, "bot_username": app["bot_username"], "media_ready": bool(app["storage"].bucket), "telegram_ready": app["telegram"].configured}
         elif path == "screenings":
             result = {"screenings": await db(app, "list_screenings", user)}
         elif path == "room":
@@ -142,7 +143,9 @@ async def api(request):
         elif path == "messages":
             result = {"messages": await db(app, "history", user, request.query.get("scope", "global"), request.query.get("before"))}
         elif path == "playback":
-            result = await asyncio.to_thread(app["storage"].playback, user, request.query.get("room", ""))
+            result = await app["telegram"].playback(app, user, request.query.get("room", ""), request.headers["X-Telegram-Init-Data"])
+            if result is None:
+                result = await asyncio.to_thread(app["storage"].playback, user, request.query.get("room", ""))
         elif path == "media":
             result = await asyncio.to_thread(app["storage"].message_media, user, int(request.query.get("id", 0)))
         elif path == "admin":
@@ -164,6 +167,12 @@ async def api(request):
             await emit(app, scope)
         elif path == "report":
             result = await db(app, "report", user, data.get("scope", "global"), data)
+        elif path == "screening/telegram":
+            admin(user)
+            throttle(app, "telegram-import:"+str(user["id"]), 10)
+            source = await app["bridge"].request("source", request.headers["X-Telegram-Init-Data"], code=data.get("code"))
+            result = await app["telegram"].import_movie(app, user, source, data)
+            await emit(app)
         elif path == "screening":
             result = await db(app, "create_screening", user, data)
             await emit(app)
@@ -255,6 +264,7 @@ async def lifecycle(app):
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
         await asyncio.gather(*(ws.close(code=1001) for ws in list(app["sockets"])))
+        await app["telegram"].close()
         app["store"].db.close()
 
 
@@ -274,9 +284,11 @@ def create_app(store=None, bridge=None, storage=None, origin=None):
     app["bot_username"] = os.getenv("BOT_USERNAME", "").lstrip("@")
     app["sockets"], app["tickets"] = {}, {}
     app["rates"] = OrderedDict()
+    app["telegram"] = TelegramMedia()
     if bridge:
         app["bridge"] = bridge
     app.cleanup_ctx.append(lifecycle)
+    app.router.add_get("/telegram-video/{token}", app["telegram"].stream)
     app.router.add_get("/health", health)
     app.router.add_route("*", "/api/{path:.*}", api)
     app.router.add_get("/ws", socket)

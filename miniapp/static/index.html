@@ -44,9 +44,9 @@
       <div class="eyebrow">BOSHQARUV</div><h1 class="small-title">Admin panel</h1>
       <div class="admin-stats"><div><strong id="online-count">0</strong><small>Xonalarda hozir</small></div><div><strong id="admin-seance-count">0</strong><small>Seanslar</small></div></div>
       <form id="screening-form" class="panel">
-        <div class="eyebrow">YANGI SEANS</div><h2>Kino qo‘shish</h2><p class="muted">Video va nom — boshlash uchun yetarli.</p>
-        <label class="upload-zone">1. Video tanlash<input id="movie-file" type="file" accept="video/mp4" required><small>Telefon yoki kompyuterdan MP4 tanlang · 8 GB gacha</small></label>
-        <label>Botdan nom va tavsif olish (ixtiyoriy)<div class="inline"><input id="catalog-query" placeholder="Kino nomi yoki kodi"><button type="button" id="catalog-search" class="secondary">Topish</button></div></label>
+        <div class="eyebrow">YANGI SEANS</div><h2>Kino qo‘shish</h2><p class="muted">Botdagi kino kodini kiriting, topilgan kinoni tanlang va boshlang.</p>
+
+        <label>1. Botdagi kinoni tanlang<div class="inline"><input id="catalog-query" placeholder="Kino nomi yoki kodi"><button type="button" id="catalog-search" class="secondary">Topish</button></div></label>
         <div id="catalog-results"></div><input name="movie_code" type="hidden">
         <label>2. Kino nomi<input name="title" required maxlength="160" placeholder="Masalan: Yulduzlar sari"></label>
         <details><summary>Vaqt, VIP va tavsifni sozlash</summary><label>Qisqacha tavsif<textarea name="description" maxlength="1500" rows="3" placeholder="Bugungi seans nimasi bilan qiziq?"></textarea></label>
@@ -54,6 +54,7 @@
         <label class="check"><input name="vip" type="checkbox"> Faqat VIP obunachilar uchun</label>
 
         <p class="muted">Boshlanish vaqtini bo‘sh qoldirsangiz, kino yuklangach boshlanadi. Davomiylik videodan avtomatik olinadi.</p></details>
+        <details><summary>Yoki yangi video fayl yuklash</summary>        <label class="upload-zone">1. Video tanlash<input id="movie-file" type="file" accept="video/mp4"><small>Telefon yoki kompyuterdan MP4 tanlang · 8 GB gacha</small></label><p class="muted">Fayl yuklash uchun alohida media xizmati kerak. Botdagi kino uchun fayl tanlamang.</p></details>
         <progress id="upload-progress" max="100" value="0" hidden></progress><p id="upload-status" role="status"></p>
         <button class="primary" id="publish-button" type="submit">Kinoni qo‘shish ↗</button>
       </form>

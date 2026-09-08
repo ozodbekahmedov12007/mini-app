@@ -125,6 +125,8 @@ class Storage:
                   (SELECT 1 FROM screenings s WHERE s.asset_id=a.id AND cancelled=0 AND ends>?)) LIMIT 20''',
                 (now-86400, now-7*86400, now-86400, now))
         for asset in expired:
+            if asset["upload_id"] == "telegram":
+                continue
             if asset["ready"]:
                 self.client.delete_object(Bucket=self.bucket, Key=asset["object_key"])
             else:
