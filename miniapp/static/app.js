@@ -422,7 +422,8 @@ function playMovieIntro(){
  const intro=$('movie-intro');clearTimeout(introTimer);
  if(intro.open)intro.close();
  intro.showModal();
- introTimer=setTimeout(hideMovieIntro,matchMedia('(prefers-reduced-motion: reduce)').matches?450:2300);
+ intro.getAnimations({subtree:true}).forEach(animation=>{animation.cancel();animation.play();});
+ introTimer=setTimeout(hideMovieIntro,matchMedia('(prefers-reduced-motion: reduce)').matches?450:3300);
 }
 $('skip-intro').onclick=hideMovieIntro;
 $('movie-intro').addEventListener('cancel',()=>clearTimeout(introTimer));
