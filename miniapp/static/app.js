@@ -14,7 +14,7 @@ function button(text, className, fn) {const el=node('button',className,text);el.
 function avatar(user) {const el=node('span','avatar',(user.name||'K').slice(0,1).toUpperCase());if(user.photo?.startsWith('https://')){const img=node('img');img.src=user.photo;img.referrerPolicy='no-referrer';img.alt='';img.onerror=()=>img.remove();el.replaceChildren(img);}el.title=user.name||'';return el;}
 function stamp(seconds) {const d=new Date(seconds*1000),months=['yan','fev','mar','apr','may','iyn','iyl','avg','sen','okt','noy','dek'];return `${d.getDate()} ${months[d.getMonth()]} · ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;}
 function duration(seconds) {return `${Math.floor(seconds/60)}:${String(Math.floor(seconds%60)).padStart(2,'0')}`;}
-async function api(path,body) {const r=await fetch('/api/'+path,{method:body===undefined?'GET':'POST',headers:{'X-Telegram-Init-Data':initData,'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});const data=await r.json();if(!r.ok){const e=new Error(data.error||'Ulanish xatosi');e.status=r.status;throw e;}return data;}
+async function api(path,body,signal) {const r=await fetch('/api/'+path,{signal,method:body===undefined?'GET':'POST',headers:{'X-Telegram-Init-Data':initData,'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});const data=await r.json();if(!r.ok){const e=new Error(data.error||'Ulanish xatosi');e.status=r.status;throw e;}return data;}
 async function show(view) {
   if(!state.user&&view!=='login')return;
   if(view==='admin'&&!state.user?.admin)return;
@@ -22,7 +22,7 @@ async function show(view) {
   for(const el of document.querySelectorAll('.view'))el.hidden=el.id!=='view-'+view;
   for(const el of document.querySelectorAll('[data-view]'))el.classList.toggle('active',el.dataset.view===view);
   closeSocket();
-  if(view==='home')await screenings();
+  if(view==='home')await Promise.all([screenings(),loadCabinets()]);
   if(view==='chat')await openChat('global-chat','global');
   if(view==='admin')await dashboard();
   if(view==='profile'){profile();await loadSocial();}
@@ -41,7 +41,7 @@ async function screenings(){
     body.append(node('h3','',s.title),node('p','',`${stamp(s.starts)} · ${Math.round(s.duration/60)} daqiqa`));
     if(s.description)body.append(node('p','',s.description.slice(0,150)));
     const actions=node('div','card-actions');
-    if(live){actions.append(button('▶ Qo‘shilish','primary',()=>join({screening:s.id})),button('＋ Kabinet yaratish','secondary',()=>join({screening:s.id,private:true,locked:true})));}
+    if(live){actions.append(button('▶ Qo‘shilish','primary',()=>join({screening:s.id})));}
     else actions.append(node('span','pill','SEANS VAQTIDA OCHILADI'));
     const save=button(s.saved?'♥ Saqlangan':'♡ Saqlash','secondary save-movie',async()=>{save.disabled=true;try{await api('favorite',{screening:s.id,saved:!s.saved});s.saved=!s.saved;save.textContent=s.saved?'♥ Saqlangan':'♡ Saqlash';}finally{save.disabled=false;}});
     body.append(save);
@@ -52,25 +52,49 @@ async function join(data){
  if(data.room){const admission=await api('room/request',{room:data.room});if(admission.status!=='approved'){state.pendingRoom=data.room;await show('waiting');$('waiting-status').textContent=admission.status==='rejected'?'Kabinet egasi so‘rovingizni rad etdi.':'So‘rov yuborildi. Kabinet egasi ruxsat bergach, quyidagi tugmani bosing.';return;}}
  const room=await api('join',data);state.pendingRoom=null;$('room-poll-panel').open=false;$('room-friends-panel').open=false;$('room-poll').replaceChildren();$('room-friends').replaceChildren();state.room=room;state.mediaLoaded=false;state.playbackExpiry=0;await show('room');renderRoom(room);clearInterval(state.timer);state.timer=setInterval(tickRoom,20000);await loadPlayback();}
 function renderRoom(room){
-  state.room=room;$('private-room').hidden=!!room.private;$('room-invite').hidden=!room.private;if(room.private&&state.botUsername)$('room-invite').value=`https://t.me/${state.botUsername}?startapp=room_${room.id}`;$('room-title').textContent=room.title;$('room-count').textContent=`${room.members.length} / 20`;
+  state.room=room;$('room-invite').hidden=!room.private;if(room.private&&state.botUsername)$('room-invite').value=`https://t.me/${state.botUsername}?startapp=room_${room.id}`;$('room-title').textContent=room.title;$('room-count').textContent=`${room.members.length} / 20`;
   $('members').replaceChildren(...room.members.map(avatar));
   $('owner-controls').hidden=!(room.private&&room.owner===state.user.id);
-  $('room-status').textContent=room.private?'Shaxsiy xona · boshqaruv xona egasida':'Ommaviy seans · hamma bir vaqtda tomosha qiladi';
+  $('room-status').textContent=room.private?`${room.movie_title||room.title} · boshqaruv kabinet egasida`:'Ommaviy seans · hamma bir vaqtda tomosha qiladi';
   $('seek').max=room.duration;$('seek').value=Math.floor(room.position);$('position-label').textContent=duration(room.position);
-  clearTimeout(endTimer);endTimer=setTimeout(()=>{exitRoom().catch(e=>notify(e.message));notify('Seans yakunlandi. Suhbatni davom ettiramiz!');},Math.max(0,(room.ends-room.server_time)*1000));
+  clearTimeout(endTimer);if(!room.personal)endTimer=setTimeout(()=>{exitRoom().catch(e=>notify(e.message));notify('Seans yakunlandi. Suhbatni davom ettiramiz!');},Math.max(0,(room.ends-room.server_time)*1000));
   renderAccess(room);
   syncPlayer(room);
 }
 function syncPlayer(room){const p=$('player');if(!state.mediaLoaded)return;if(Math.abs(p.currentTime-room.position)>2.5)p.currentTime=room.position;if(room.playing){p.play().then(()=>$('start-player').hidden=true).catch(()=>$('start-player').hidden=false);}else p.pause();}
-async function loadPlayback(){const rid=state.room?.id;if(!rid)return;let data;try{data=await api('playback?room='+encodeURIComponent(rid));}catch(e){reportVideo('playback_unavailable');throw e;}if(state.room?.id!==rid)return;state.playbackExpiry=Date.now()+data.expires_in*1000;const p=$('player');state.mediaLoaded=false;p.onloadedmetadata=()=>{if(state.room?.id===rid){state.mediaLoaded=true;syncPlayer(state.room);}};p.src=data.url;renderRoom(data.room);}
+let playbackRequest=null;
+async function loadPlayback(){
+ const rid=state.room?.id;if(!rid)return;
+ playbackRequest?.abort();const request=new AbortController();playbackRequest=request;
+ const timeout=setTimeout(()=>request.abort(),30000);
+ clearVideoLoading();videoLastProgress=Date.now();videoLastTime=0;videoLoading('Video yuklanmoqda…');$('retry-video').disabled=true;
+ try{
+  const data=await api('playback?room='+encodeURIComponent(rid),undefined,request.signal);
+  if(state.room?.id!==rid||playbackRequest!==request)return;
+  state.playbackExpiry=Date.now()+data.expires_in*1000;
+  const p=$('player');state.mediaLoaded=false;
+  p.onloadedmetadata=()=>{if(state.room?.id===rid){state.mediaLoaded=true;syncPlayer(state.room);}};
+  p.src=data.url;renderRoom(data.room);
+ }catch(e){
+  if(state.room?.id!==rid||playbackRequest!==request)return;
+  reportVideo('playback_unavailable');
+  videoFailed(e.name==='AbortError'?'Ulanish uzoq kutildi. Qayta urinib ko‘ring.':e.message);
+ }finally{clearTimeout(timeout);if(playbackRequest===request){playbackRequest=null;$('retry-video').disabled=false;}}
+}
+
 let ticking=false;
 async function tickRoom(){if(!state.room||ticking)return;const rid=state.room.id;ticking=true;try{const room=await api('room?id='+encodeURIComponent(rid));if(state.room?.id===rid){renderRoom(room);if($('room-poll-panel').open)await refreshPoll();}}catch(e){if(state.room?.id!==rid)return;if([403,404,410].includes(e.status)){await exitRoom();notify(e.message);}else notify(e.message);}finally{ticking=false;}}
 $('start-player').onclick=()=>{if(state.room?.private&&!state.room.playing){if(state.room.owner===state.user.id)control(state.room.position,true).catch(e=>notify(e.message));else notify('Xona egasi kinoni boshlashini kuting');return;}const p=$('player');p.play().then(()=>$('start-player').hidden=true).catch(()=>notify('Videoni ijro etib bo‘lmadi. Internet yoki video formatini tekshiring.'));};
-$('player').onerror=()=>{if(!state.room)return;reportVideo(({2:'video_network',3:'video_decode',4:'video_format'})[$('player').error?.code]||'video_unknown');if(Date.now()>state.playbackExpiry)loadPlayback().catch(e=>notify(e.message));else notify('Video yuklanmadi. Ulanishni tekshirib, xonaga qayta kiring.');};
+$('player').onerror=()=>{
+ if(!state.room)return;
+ const code=$('player').error?.code;
+ reportVideo(({2:'video_network',3:'video_decode',4:'video_format'})[code]||'video_unknown');
+ videoFailed(code===3||code===4?'Video ochilmadi. Qayta urinib ko‘ring.':'Video yuklanmadi. Internetni tekshiring va qayta urining.');
+};
 async function control(position,playing){renderRoom(await api('control',{room:state.room.id,position:Math.floor(position),playing}));}
 $('toggle-play').onclick=()=>control($('player').currentTime,!state.room.playing).catch(e=>notify(e.message));
 $('seek').onchange=()=>control(Number($('seek').value),state.room.playing).catch(e=>notify(e.message));
-async function exitRoom(){await closeTheater();clearInterval(state.timer);clearTimeout(endTimer);state.timer=null;state.room=null;state.mediaLoaded=false;const p=$('player');p.pause();p.removeAttribute('src');p.load();try{await api('leave',{});}catch{}await show('chat');}
+async function exitRoom(){playbackRequest?.abort();playbackRequest=null;clearVideoLoading();await closeTheater();clearInterval(state.timer);clearTimeout(endTimer);state.timer=null;state.room=null;state.mediaLoaded=false;const p=$('player');p.pause();p.removeAttribute('src');p.load();try{await api('leave',{});}catch{}await show('chat');}
 $('leave-room').onclick=()=>exitRoom().catch(e=>notify(e.message));
 $('share-room').onclick=async()=>{try{if(!state.botUsername)throw new Error('Bot havolasi hali sozlanmagan');const url=`https://t.me/${state.botUsername}?startapp=room_${state.room.id}`;if(tg?.openTelegramLink)tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent('Birga kino ko‘ramiz: '+state.room.title)}`);else{await navigator.clipboard.writeText(url);notify('Xona havolasi nusxalandi');}}catch(e){notify(e.message);}};
 function profile(){const card=$('profile-card');card.replaceChildren();const who=node('div','profile-name');who.append(avatar(state.user),node('h2','',state.user.name));card.append(who,node('p','muted',`Telegram ID: ${state.user.id}`),node('span','pill',state.user.vip_until>Date.now()/1000?`✦ VIP · ${stamp(state.user.vip_until)} gacha`:'ODDIY OBUNA'));if(state.room)card.append(button('▶ Xonaga qaytish','primary',()=>show('room')));}
@@ -172,8 +196,8 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden&&state.roo
 async function boot(){if(!initData){await show('login');return;}try{const info=await api('me');state.user=info.user;state.mediaReady=info.media_ready;$('media-profile-help').hidden=!info.media_ready;state.botUsername=info.bot_username;$('file-upload-options').hidden=!info.media_ready;if(!info.media_ready){$('movie-file').value='';$('movie-file').disabled=true;}$('profile-button').replaceChildren(...avatar(state.user).childNodes);$('admin-nav').hidden=!state.user.admin;const param=tg?.initDataUnsafe?.start_param||new URLSearchParams(location.search).get('tgWebAppStartParam')||'';if(param.startsWith('room_'))await join({room:param.slice(5)});else await show('home');}catch(e){notify(e.message);if(!state.user)await show('login');else await show('home');}}
 boot();
 
-$('create-room-home').onclick=()=>{$('seance-list').scrollIntoView({behavior:'smooth',block:'start'});notify('Kinoning ostidagi Kabinet yaratish tugmasini bosing.');};
-$('private-room').onclick=()=>{if(state.room)join({screening:state.room.screening_id,private:true,locked:true}).catch(e=>notify(e.message));};
+$('create-room-home').onclick=()=>show('create-cabinet').catch(e=>notify(e.message));
+
 $('room-invite').onclick=async()=>{try{await navigator.clipboard.writeText($('room-invite').value);notify('Kabinet havolasi nusxalandi');}catch{$('room-invite').select();}};
 let telegramTheater=false;
 async function closeTheater(){
@@ -263,7 +287,7 @@ function renderLibrary(id,movies,favorites){
  const box=$(id);box.replaceChildren();
  for(const movie of movies){const row=node('div','social-row'),available=!movie.cancelled&&movie.ends>Date.now()/1000;
   row.append(node('strong','',movie.title),node('small','muted',favorites?(available?'Seans mavjud':'Seans tugagan'):stamp(movie.last_seen)));
-  if(available)row.append(button(movie.starts>Date.now()/1000?'Jadvalni ko‘rish':'Tomosha qilish','secondary',()=>movie.starts>Date.now()/1000?show('home'):join({screening:movie.id})));
+  if(available)row.append(button(movie.starts>Date.now()/1000?'Jadvalni ko‘rish':'Tomosha qilish','secondary',()=>movie.starts>Date.now()/1000?show('home'):join(movie.room?{room:movie.room}:{screening:movie.id})));
   if(favorites)row.append(button('Olib tashlash','text-button',async()=>{await api('favorite',{screening:movie.id,saved:false});await loadSocial();}));
   box.append(row);
  }
@@ -315,3 +339,50 @@ async function loadDiagnostics(){
 }
 $('diagnostics-panel').ontoggle=()=>{if($('diagnostics-panel').open)loadDiagnostics().catch(e=>notify(e.message));};
 $('check-telegram').onclick=async()=>{const b=$('check-telegram');b.disabled=true;$('check-result').textContent='Tekshirilmoqda…';try{const data=await api('diagnostics/check',{});$('check-result').textContent=data.message;}catch(e){$('check-result').textContent=e.message;}finally{b.disabled=false;}};
+
+let cabinetMovie=null;
+$('cancel-create-cabinet').onclick=()=>show('home').catch(e=>notify(e.message));
+$('cabinet-search').onclick=async()=>{
+ const search=$('cabinet-search');search.disabled=true;$('cabinet-movies').textContent='Kinolar qidirilmoqda…';
+ try{const data=await api('catalog?q='+encodeURIComponent($('cabinet-query').value));$('cabinet-movies').replaceChildren();
+  for(const movie of data.movies)$('cabinet-movies').append(button(`#${movie.code} · ${movie.title}${movie.vip?' · VIP':''}`,'secondary library-entry',()=>{cabinetMovie=movie;$('cabinet-selected').textContent='Tanlandi: '+movie.title;$('cabinet-movies').replaceChildren();}));
+  if(!data.movies.length)$('cabinet-movies').textContent='Kino topilmadi. Boshqa nom yoki kod bilan qidiring.';
+ }catch(e){$('cabinet-movies').textContent=e.message;}finally{search.disabled=false;}
+};
+$('cabinet-form').onsubmit=async e=>{
+ e.preventDefault();if(!cabinetMovie){notify('Avval ro‘yxatdan kinoni tanlang.');return;}
+ const submit=$('cabinet-create-submit');submit.disabled=true;submit.textContent='Kabinet yaratilmoqda…';
+ try{const result=await api('cabinet/create',{name:$('cabinet-name').value.trim(),code:cabinetMovie.code});$('cabinet-form').reset();cabinetMovie=null;$('cabinet-selected').textContent='Kino hali tanlanmagan.';await join({room:result.id});}
+ catch(error){notify(error.message);}finally{submit.disabled=false;submit.textContent='Kabinetni yaratish';}
+};
+async function loadCabinets(){
+ const data=await api('cabinets'),box=$('home-cabinet-list');box.replaceChildren();
+ for(const room of data.rooms){const row=node('div','social-row');row.append(node('strong','',room.title),node('small','muted',room.movie_title));
+  row.append(button('Kabinetga kirish','primary',()=>join({room:room.id})),button('Yopish','text-button',async()=>{if(!confirm('Kabinet barcha qatnashchilar uchun yopilsinmi?'))return;await api('cabinet/close',{room:room.id});await loadCabinets();}));box.append(row);
+ }
+ if(!data.rooms.length)box.append(node('p','muted','Hali kabinet yaratmagansiz. Yuqoridagi tugma orqali oching.'));
+}
+
+let videoWaitTimer=null,videoLastTime=0,videoLastProgress=Date.now();
+function videoLoading(message='Internet kutilmoqda…'){
+ if(!state.room)return;
+ const panel=$('video-loading');
+ if(!panel.hidden)return;
+ panel.hidden=false;panel.classList.remove('failed');$('player').setAttribute('aria-busy','true');
+ $('video-loading-text').textContent=message;$('retry-video').hidden=true;
+ videoWaitTimer=setTimeout(()=>{if(!panel.hidden){$('video-loading-text').textContent='Yuklanish cho‘zildi. Internetni tekshiring.';$('retry-video').hidden=false;}},15000);
+}
+function clearVideoLoading(){clearTimeout(videoWaitTimer);videoWaitTimer=null;$('video-loading').hidden=true;$('player').setAttribute('aria-busy','false');}
+function videoFailed(message){
+ clearTimeout(videoWaitTimer);$('video-loading').hidden=false;$('video-loading').classList.add('failed');$('video-loading-text').textContent=message;$('retry-video').hidden=false;$('player').setAttribute('aria-busy','false');
+}
+$('retry-video').onclick=()=>{clearVideoLoading();loadPlayback().catch(e=>videoFailed(e.message));};
+const watchedVideo=$('player');
+for(const event of ['loadstart','waiting','seeking'])watchedVideo.addEventListener(event,()=>videoLoading(event==='loadstart'?'Video yuklanmoqda…':'Video yuklanishi kutilmoqda…'));
+watchedVideo.addEventListener('stalled',()=>{if(watchedVideo.readyState<3)videoLoading();});
+watchedVideo.addEventListener('playing',()=>{videoLastProgress=Date.now();clearVideoLoading();});
+watchedVideo.addEventListener('canplay',()=>{videoLastProgress=Date.now();clearVideoLoading();});
+watchedVideo.addEventListener('seeked',()=>{if(watchedVideo.readyState>=3)clearVideoLoading();});
+watchedVideo.addEventListener('timeupdate',()=>{if(Math.abs(watchedVideo.currentTime-videoLastTime)>.05){videoLastTime=watchedVideo.currentTime;videoLastProgress=Date.now();if(!watchedVideo.seeking&&watchedVideo.readyState>=3)clearVideoLoading();}});
+watchedVideo.addEventListener('ended',clearVideoLoading);
+setInterval(()=>{if(state.room&&state.view==='room'&&state.room.playing&&!watchedVideo.paused&&!watchedVideo.ended&&!document.hidden&&Date.now()-videoLastProgress>6000)videoLoading();},2000);

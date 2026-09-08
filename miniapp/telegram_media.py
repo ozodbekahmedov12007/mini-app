@@ -104,6 +104,26 @@ class TelegramMedia:
             await db(app, 'rows', 'DELETE FROM assets WHERE id=?', (aid,))
             raise
 
+    async def create_cabinet(self, app, user, source, data):
+        from miniapp.server import db
+        if source.get('vip') and user.get('vip_until',0)<=time.time():
+            raise Problem('Bu kino uchun shaxsiy VIP obuna kerak',403)
+        name=str(data.get('name','')).strip()
+        if not 1<=len(name)<=60:
+            raise Problem('Kabinet nomi 1–60 belgi bo‘lsin')
+        doc=await self.document(source)
+        seconds=next((int(a.duration) for a in doc.attributes if hasattr(a,'duration')),0)
+        if not 60<=seconds<=28800:
+            raise Problem('Kino davomiyligi 1 daqiqadan 8 soatgacha bo‘lishi kerak')
+        aid='tg_'+secrets.token_urlsafe(18)
+        key=json.dumps({'channel':source['channel'],'message':source['message']})
+        await db(app,'rows','INSERT INTO assets VALUES(?,?,?,?,?,?,?,?,?)',(aid,user['id'],'movie','video/mp4',doc.size,key,'telegram',1,time.time()))
+        try:
+            return await db(app,'create_cabinet',user,name,source,aid,seconds)
+        except BaseException:
+            await db(app,'rows','DELETE FROM assets WHERE id=?',(aid,))
+            raise
+
     async def playback(self, app, user, rid, raw):
         from miniapp.server import db
         room = await db(app, 'room', user, rid, heartbeat=True)

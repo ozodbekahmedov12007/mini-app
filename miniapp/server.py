@@ -153,6 +153,8 @@ async def api(request):
             result = await db(app, "dashboard", user)
         elif path == "admin/room":
             result = await db(app, "admin_room", user, request.query.get("id", ""))
+        elif path == "cabinets":
+            result = {"rooms": await db(app, "my_cabinets", user)}
         elif path == "social":
             result = await db(app, "social", user)
         elif path == "poll":
@@ -164,10 +166,19 @@ async def api(request):
                       "uploads_configured": bool(app["storage"].bucket),
                       "streams": sum(app["telegram"].active.values())}
         elif path == "catalog":
-            admin(user)
+            throttle(app, "catalog:"+str(user["id"]), 20)
             result = await app["bridge"].request("catalog", request.headers["X-Telegram-Init-Data"], query=request.query.get("q", ""))
     elif request.method == "POST":
-        if path == "join":
+        if path == "cabinet/create":
+            throttle(app,"cabinet-create:"+str(user["id"]),5)
+            source=await app["bridge"].request("source",request.headers["X-Telegram-Init-Data"],code=data.get("code"))
+            result=await app["telegram"].create_cabinet(app,user,source,data)
+        elif path == "cabinet/close":
+            result=await db(app,"close_cabinet",user,str(data.get("room","")))
+            await emit(app,data.get("room"))
+        elif path == "join":
+            if data.get("private"):
+                raise Problem("Kabinet yaratish formasidan kino va nom tanlang",409)
             result = await db(app, "join", user, data.get("screening"), data.get("room"), bool(data.get("private")), bool(data.get("locked")))
         elif path == "friend":
             throttle(app, "friend:"+str(user["id"]), 20)

@@ -105,6 +105,11 @@ class Store:
         if 'locked' not in {row[1] for row in self.db.execute('PRAGMA table_info(rooms)')}:
             self.db.execute('ALTER TABLE rooms ADD COLUMN locked INTEGER NOT NULL DEFAULT 0')
 
+        if 'personal' not in {row[1] for row in self.db.execute('PRAGMA table_info(screenings)')}:
+            self.db.execute('ALTER TABLE screenings ADD COLUMN personal INTEGER NOT NULL DEFAULT 0')
+        if 'name' not in {row[1] for row in self.db.execute('PRAGMA table_info(rooms)')}:
+            self.db.execute("ALTER TABLE rooms ADD COLUMN name TEXT NOT NULL DEFAULT ''")
+
     def rows(self, sql, args=()):
         return [dict(row) for row in self.db.execute(sql, args).fetchall()]
 
@@ -135,7 +140,7 @@ class Store:
     def list_screenings(self, user):
         self.allowed(user)
         columns = "id,title,description,movie_code,starts,ends,duration,vip,EXISTS(SELECT 1 FROM favorites f WHERE f.screening=screenings.id AND f.user_id=?) saved"
-        return self.rows(f"SELECT {columns} FROM screenings WHERE cancelled=0 AND ends>? ORDER BY starts LIMIT 100",
+        return self.rows(f"SELECT {columns} FROM screenings WHERE personal=0 AND cancelled=0 AND ends>? ORDER BY starts LIMIT 100",
                          (user["id"],self.clock()))
 
     def create_screening(self, user, data):
@@ -178,7 +183,9 @@ class Store:
                         permission = self.one("SELECT status FROM room_access WHERE room=? AND user_id=?", (room_id,user["id"]))
                         if not permission or permission["status"] != "approved":
                             raise Problem("Kabinetga kirish uchun egasining ruxsati kerak", 403)
-                self.screening(sid, user)
+                screening = self.screening(sid, user)
+                if screening['personal'] and not room_id:
+                    raise Problem('Shaxsiy kabinetga taklif orqali kiring',403)
                 self.db.execute("DELETE FROM members WHERE user_id=?", (user["id"],))
                 if not room_id:
                     room = None if private else self.one('''SELECT r.* FROM rooms r LEFT JOIN members m ON m.room=r.id
@@ -222,7 +229,7 @@ class Store:
             self.db.execute("UPDATE rooms SET owner=? WHERE id=?", (room["owner"], rid))
         position = (room["position"] + (self.clock()-room["updated"] if room["playing"] else 0)
                     if room["private"] else self.clock()-screening["starts"])
-        return {"id": rid, "screening_id": screening["id"], "title": screening["title"], "ends": screening["ends"],
+        return {"id": rid, "screening_id": screening["id"], "title": room["name"] or screening["title"], "movie_title": screening["title"], "personal": bool(screening["personal"]), "ends": screening["ends"],
                 "duration": screening["duration"], "locked": bool(room["locked"]), "private": bool(room["private"]), "owner": room["owner"],
                 "position": max(0, min(position, screening["duration"])),
                 "playing": bool(room["playing"]) if room["private"] else True,
@@ -313,7 +320,7 @@ class Store:
         return {"screenings": self.rows("""SELECT s.id,s.title,s.starts,s.ends,s.vip,s.cancelled,
                     COALESCE(v.viewers,0) viewers FROM screenings s LEFT JOIN
                     (SELECT screening,COUNT(*) viewers FROM screening_visitors GROUP BY screening) v ON v.screening=s.id
-                    ORDER BY s.starts DESC LIMIT 100"""),
+                    WHERE s.personal=0 ORDER BY s.starts DESC LIMIT 100"""),
                 "rooms": self.rows("""SELECT r.id,r.private,r.owner,s.title,s.vip,s.ends,
                     COUNT(m.user_id) members FROM rooms r JOIN screenings s ON s.id=r.screening
                     LEFT JOIN members m ON m.room=r.id AND m.seen>?
@@ -325,6 +332,40 @@ class Store:
                 "messages": self.one("SELECT COUNT(*) n FROM messages WHERE deleted=0")["n"],
                 "audit": self.rows("SELECT * FROM audit ORDER BY id DESC LIMIT 30")}
 
+
+    def my_cabinets(self, user):
+        self.allowed(user)
+        return self.rows("SELECT r.id,r.name title,s.title movie_title,r.locked FROM rooms r JOIN screenings s ON s.id=r.screening WHERE r.owner=? AND s.personal=1 AND s.cancelled=0 ORDER BY r.created DESC LIMIT 10", (user['id'],))
+
+    def create_cabinet(self, user, name, source, aid, duration):
+        self.allowed(user, writing=True)
+        name = str(name).strip()
+        if not 1 <= len(name) <= 60:
+            raise Problem('Kabinet nomi 1–60 belgi bo‘lsin')
+        if source.get('vip') and user.get('vip_until',0) <= self.clock():
+            raise Problem('Bu kino uchun shaxsiy VIP obuna kerak',403)
+        if len(self.my_cabinets(user)) >= 5:
+            raise Problem('5 tagacha kabinet yaratish mumkin. Avval eskisini yoping.',409)
+        sid,rid=secrets.token_urlsafe(18),secrets.token_urlsafe(18)
+        now=self.clock()
+        self.db.execute('BEGIN IMMEDIATE')
+        try:
+            self.db.execute("INSERT INTO screenings(id,title,description,movie_code,asset_id,starts,ends,duration,vip,created_by,personal) VALUES(?,?,?,?,?,?,?,?,?,?,1)",
+                (sid,source['title'],source.get('description',''),source['code'],aid,now,253402300799,duration,int(bool(source.get('vip'))),user['id']))
+            self.db.execute('INSERT INTO rooms(id,screening,private,owner,updated,created,locked,name) VALUES(?,?,1,?,?,?,1,?)',(rid,sid,user['id'],now,now,name))
+            self.db.execute('COMMIT')
+        except BaseException:
+            self.db.execute('ROLLBACK')
+            raise
+        return {'id':rid}
+
+    def close_cabinet(self, user, rid):
+        self.allowed(user, writing=True)
+        row=self.one('SELECT r.owner,r.screening,s.personal FROM rooms r JOIN screenings s ON s.id=r.screening WHERE r.id=?',(rid,))
+        if not row or not row['personal'] or row['owner']!=user['id']:
+            raise Problem('Faqat o‘zingizning kabinetingizni yopishingiz mumkin',403)
+        self.db.execute('UPDATE screenings SET cancelled=1 WHERE id=?',(row['screening'],))
+        return {'ok':True}
 
     def profile_identity(self, user):
         self.allowed(user)
@@ -341,9 +382,9 @@ class Store:
         profile["requests"] = self.rows("SELECT p.user_id,p.name FROM friendships f JOIN profiles p ON p.user_id=f.sender WHERE f.recipient=? AND f.accepted=0 LIMIT 50", (uid,))
         profile["sent"] = self.rows("SELECT p.user_id,p.name FROM friendships f JOIN profiles p ON p.user_id=f.recipient WHERE f.sender=? AND f.accepted=0 LIMIT 50", (uid,))
         profile["favorites"] = self.rows("SELECT s.id,s.title,s.ends,s.starts,s.cancelled FROM favorites f JOIN screenings s ON s.id=f.screening WHERE f.user_id=? ORDER BY f.created DESC LIMIT 100", (uid,))
-        profile["history"] = self.rows("SELECT s.id,s.title,s.ends,s.starts,s.cancelled,v.last_seen FROM screening_visitors v JOIN screenings s ON s.id=v.screening WHERE v.user_id=? ORDER BY v.last_seen DESC LIMIT 50", (uid,))
-        profile["rooms"] = self.rows("SELECT r.id,s.title,r.locked FROM rooms r JOIN screenings s ON s.id=r.screening WHERE r.owner=? AND r.private=1 AND s.cancelled=0 AND s.ends>? ORDER BY r.created DESC LIMIT 10", (uid,self.clock()))
-        profile["invitations"] = self.rows("""SELECT i.room,p.name,s.title FROM room_invitations i JOIN rooms r ON r.id=i.room
+        profile["history"] = self.rows("SELECT s.id,s.title,s.ends,s.starts,s.cancelled,v.last_seen,(SELECT r.id FROM rooms r WHERE r.screening=s.id AND s.personal=1 LIMIT 1) room FROM screening_visitors v JOIN screenings s ON s.id=v.screening WHERE v.user_id=? ORDER BY v.last_seen DESC LIMIT 50", (uid,))
+        profile["rooms"] = self.my_cabinets(user)
+        profile["invitations"] = self.rows("""SELECT i.room,p.name,COALESCE(NULLIF(r.name,''),s.title) title FROM room_invitations i JOIN rooms r ON r.id=i.room
             JOIN screenings s ON s.id=r.screening JOIN profiles p ON p.user_id=i.sender
             WHERE i.user_id=? AND s.cancelled=0 AND s.ends>? ORDER BY i.created DESC LIMIT 30""", (uid,self.clock()))
         return profile
@@ -435,7 +476,7 @@ class Store:
         # One next-movie ballot per room; only published, available screenings are options.
         choices = self.rows("""SELECT s.id,s.title,s.vip,COUNT(v.user_id) votes FROM screenings s
             LEFT JOIN movie_votes v ON v.screening=s.id AND v.room=?
-            WHERE s.cancelled=0 AND s.ends>? AND s.id!=? GROUP BY s.id
+            WHERE s.personal=0 AND s.cancelled=0 AND s.ends>? AND s.id!=? GROUP BY s.id
             ORDER BY votes DESC,s.starts LIMIT 30""", (rid,self.clock(),room["screening_id"]))
         mine = self.one("SELECT screening FROM movie_votes WHERE room=? AND user_id=?", (rid,user["id"]))
         return {"choices": choices, "selected": mine["screening"] if mine else None}

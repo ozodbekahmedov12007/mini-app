@@ -18,9 +18,20 @@
         <p class="intro">Yaxshi kino. Yaqin do‘stlar.<br>Barchasi bitta xonada.</p>
         <div class="hero-tags"><span>20 kishigacha</span><span>Bir vaqtda tomosha</span></div>
       </div>
-      <button id="create-room-home" class="primary room-create">＋ Do‘stlar uchun kabinet yaratish</button><p class="muted room-help">Quyidagi kinodan shaxsiy kabinet oching va havolasini do‘stlaringizga yuboring.</p><div class="section-heading" id="seance-list"><h2>Kino seanslari</h2><span id="screening-count" class="pill">JADVAL</span></div>
+      <button id="create-room-home" class="primary room-create">＋ Do‘stlar uchun kabinet yaratish</button><p class="muted room-help">Kabinetga nom bering, bot katalogidan kino tanlang va do‘stlaringizni taklif qiling.</p><div id="home-cabinets" class="panel compact-panel"><h2>Mening kabinetlarim</h2><div id="home-cabinet-list"></div></div><div class="section-heading" id="seance-list"><h2>Kino seanslari</h2><span id="screening-count" class="pill">JADVAL</span></div>
       <div id="screenings" class="cards"><div class="empty">Seanslar yuklanmoqda…</div></div>
       <button id="community-link" class="community-card"><span class="community-icon">↗</span><span><strong>Umumiy suhbat</strong><small>Do‘stlar va kino haqidagi fikrlar →</small></span></button>
+    </section>
+    <section id="view-create-cabinet" class="view" hidden>
+      <button type="button" id="cancel-create-cabinet" class="text-button">← Bosh sahifa</button>
+      <h1 class="small-title">Kabinet yaratish</h1>
+      <form id="cabinet-form" class="panel">
+        <label>Kabinet nomi<input id="cabinet-name" required maxlength="60" placeholder="Masalan: Do‘stlar davrasi"></label>
+        <label>Kino nomi yoki kodi<div class="inline"><input id="cabinet-query" maxlength="80" placeholder="Botdagi kinoni qidiring"><button type="button" id="cabinet-search" class="secondary">Topish</button></div></label>
+        <div id="cabinet-movies" role="status"></div><p id="cabinet-selected" class="muted">Kino hali tanlanmagan.</p>
+        <p class="muted">Admin seansini kutish shart emas. Kabinet o‘zingiz yopguningizcha saqlanadi. 20 kishigacha; VIP kinoda har bir qatnashchiga VIP kerak.</p>
+        <button type="submit" id="cabinet-create-submit" class="primary">Kabinetni yaratish</button>
+      </form>
     </section>
     <section id="view-chat" class="view" hidden>
       <div class="section-heading"><div><div class="eyebrow">KINO CLUB JAMOASI</div><h1 class="small-title">Umumiy chat</h1></div><span class="pill"><span class="dot"></span> SUHBAT</span></div>
@@ -30,7 +41,7 @@
     <section id="view-room" class="view" hidden>
       <button id="leave-room" class="text-button">← Xonadan chiqish</button>
       <div class="section-heading"><h2 id="room-title">Kino xonasi</h2><span id="room-count" class="pill">0 / 20</span></div>
-      <div class="room-tools"><button id="private-room" class="secondary">＋ Shaxsiy kabinet</button><button id="fullscreen-player" class="secondary">⛶ To‘liq ekran</button></div><div class="player-wrap" id="player-wrap"><button id="exit-theater" class="secondary" hidden>✕ Kichraytirish</button><video id="player" playsinline preload="metadata" controlslist="nodownload noremoteplayback" disablepictureinpicture></video><button id="start-player" class="play-overlay">▶ Tomoshani boshlash</button></div>
+      <div class="room-tools"><button id="fullscreen-player" class="secondary">⛶ To‘liq ekran</button></div><div class="player-wrap" id="player-wrap"><button id="exit-theater" class="secondary" hidden>✕ Kichraytirish</button><video id="player" playsinline preload="metadata" controlslist="nodownload noremoteplayback" disablepictureinpicture></video><div id="video-loading" role="status" aria-live="polite" hidden><span class="video-spinner" aria-hidden="true"></span><span id="video-loading-text">Video yuklanmoqda…</span><button id="retry-video" type="button" class="secondary" hidden>↻ Qayta urinish</button></div><button id="start-player" class="play-overlay">▶ Tomoshani boshlash</button></div>
       <div id="owner-controls" class="owner-controls" hidden><button id="toggle-play" class="secondary">▶ / Ⅱ</button><input id="seek" type="range" min="0" max="100" value="0" aria-label="Kino vaqti"><span id="position-label">0:00</span></div>
       <div class="room-meta"><div id="members" class="members"></div><button id="share-room" class="secondary">↗ Do‘stni chaqirish</button></div>
       <input id="room-invite" readonly aria-label="Kabinet havolasi" hidden><p id="room-status" class="muted"></p><div id="room-access-tools"></div><div id="room-chat" class="chat-shell"></div>
