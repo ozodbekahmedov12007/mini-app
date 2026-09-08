@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#111316"><title>MovieRay — Kino Club</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=intro2">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <script defer src="/static/app.js"></script>
+  <script defer src="/static/app.js?v=intro2"></script>
 </head>
 <body>
   <header class="topbar"><a class="brand" href="/" aria-label="Bosh sahifa"><span class="brand-mark">▶</span> MovieRay<span class="brand-light">CLUB</span></a><button id="profile-button" class="avatar" aria-label="Profil">K</button></header>
@@ -14,7 +14,7 @@
     <section id="view-home" class="view">
       <div class="home-hero">
         <div class="eyebrow">MOVIERAY / BIRGALIKDA TOMOSHA</div>
-        <div class="hero-heading"><h1>Birga kinoni<br><em>his qilamiz.</em></h1><button class="cinema-mark logo-assemble" id="animate-logo" aria-label="MovieRay animatsiyasi"><span></span><span></span><span></span><span></span></button></div>
+        <div class="hero-heading"><h1>Birga kinoni<br><em>his qilamiz.</em></h1><button class="cinema-mark" id="animate-logo" aria-label="MovieRay animatsiyasi">▶</button></div>
         <p class="intro">Yaxshi kino. Yaqin do‘stlar.<br>Barchasi bitta xonada.</p>
         <div class="hero-tags"><span>20 kishigacha</span><span>Bir vaqtda tomosha</span></div>
       </div>
@@ -92,4 +92,5 @@
   </main>
   <nav class="bottom-nav" aria-label="Asosiy menyu"><button data-view="home" class="active"><span>◈</span>Seanslar</button><button data-view="chat"><span>☷</span>Suhbat</button><button data-view="profile"><span>◉</span>Profil</button><button data-view="admin" id="admin-nav" hidden><span>⚙</span>Admin</button></nav>
   <dialog id="record-dialog"><h2 id="record-title">Ovozli xabar</h2><video id="record-preview" muted playsinline autoplay hidden></video><p id="record-timer">0:00 / 1:00</p><div class="inline"><button id="record-stop" class="primary">To‘xtatish va yuborish</button><button id="record-cancel" class="secondary">Bekor qilish</button></div></dialog>
+<dialog id="movie-intro" aria-label="MovieRay"><div class="intro-logo" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div><p>Birga kinoni his qilamiz.</p><button type="button" id="skip-intro">O‘tkazib yuborish</button></dialog>
 </body></html>

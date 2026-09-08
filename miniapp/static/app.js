@@ -231,7 +231,7 @@ document.addEventListener('touchmove',e=>{
 document.addEventListener('touchend',async()=>{
  const refresh=pullStart&&pullDistance>75;pullStart=null;pullDistance=0;$('refresh-hint').hidden=true;
  if(!refresh||refreshBusy||!state.user)return;
- refreshBusy=true;
+ refreshBusy=true;playMovieIntro();
  try{if(state.room)await tickRoom();else if(state.view==='home')await screenings();else if(state.view==='admin')await dashboard();else if(state.view==='profile'){const data=await api('me');state.user=data.user;profile();await loadSocial();}else await show(state.view);notify('Yangilandi');}catch(e){notify(e.message);}finally{refreshBusy=false;}
 });
 document.addEventListener('touchcancel',()=>{pullStart=null;$('refresh-hint').hidden=true;});
@@ -416,4 +416,15 @@ setInterval(async()=>{const rid=state.room?.id;if(!rid||renewingPlayback||playba
  renewingPlayback=true;try{const data=await api('playback?room='+encodeURIComponent(rid));if(state.room?.id===rid){if($('player').getAttribute('src')===data.url)state.playbackExpiry=Date.now()+data.expires_in*1000;else scheduleVideoRecovery();}}catch{}finally{renewingPlayback=false;}
 },15000);
 
-$('animate-logo').onclick=()=>{const mark=$('animate-logo');mark.classList.remove('assembling');requestAnimationFrame(()=>requestAnimationFrame(()=>mark.classList.add('assembling')));};
+let introTimer=null;
+function hideMovieIntro(){clearTimeout(introTimer);$('movie-intro').close();}
+function playMovieIntro(){
+ const intro=$('movie-intro');clearTimeout(introTimer);
+ if(intro.open)intro.close();
+ intro.showModal();
+ introTimer=setTimeout(hideMovieIntro,matchMedia('(prefers-reduced-motion: reduce)').matches?450:2300);
+}
+$('skip-intro').onclick=hideMovieIntro;
+$('movie-intro').addEventListener('cancel',()=>clearTimeout(introTimer));
+$('animate-logo').onclick=playMovieIntro;
+playMovieIntro();
