@@ -14,7 +14,7 @@
     <section id="view-home" class="view">
       <div class="home-hero">
         <div class="eyebrow">MOVIERAY / BIRGALIKDA TOMOSHA</div>
-        <div class="hero-heading"><h1>Birga kinoni<br><em>his qilamiz.</em></h1><span class="cinema-mark" aria-hidden="true">▶</span></div>
+        <div class="hero-heading"><h1>Birga kinoni<br><em>his qilamiz.</em></h1><button class="cinema-mark logo-assemble" id="animate-logo" aria-label="MovieRay animatsiyasi"><span></span><span></span><span></span><span></span></button></div>
         <p class="intro">Yaxshi kino. Yaqin do‘stlar.<br>Barchasi bitta xonada.</p>
         <div class="hero-tags"><span>20 kishigacha</span><span>Bir vaqtda tomosha</span></div>
       </div>
@@ -29,7 +29,7 @@
         <label>Kabinet nomi<input id="cabinet-name" required maxlength="60" placeholder="Masalan: Do‘stlar davrasi"></label>
         <label>Kino nomi yoki kodi<div class="inline"><input id="cabinet-query" maxlength="80" placeholder="Botdagi kinoni qidiring"><button type="button" id="cabinet-search" class="secondary">Topish</button></div></label>
         <div id="cabinet-movies" role="status"></div><p id="cabinet-selected" class="muted">Kino hali tanlanmagan.</p>
-        <p class="muted">Admin seansini kutish shart emas. Kabinet o‘zingiz yopguningizcha saqlanadi. 20 kishigacha; VIP kinoda har bir qatnashchiga VIP kerak.</p>
+        <p class="muted">Admin seansini kutish shart emas. Kino tugagach kabinet 1 daqiqadan keyin yopiladi. 20 kishigacha; VIP kinoda har bir qatnashchiga VIP kerak.</p>
         <button type="submit" id="cabinet-create-submit" class="primary">Kabinetni yaratish</button>
       </form>
     </section>
@@ -42,7 +42,8 @@
       <button id="leave-room" class="text-button">← Xonadan chiqish</button>
       <div class="section-heading"><h2 id="room-title">Kino xonasi</h2><span id="room-count" class="pill">0 / 20</span></div>
       <div class="room-tools"><button id="fullscreen-player" class="secondary">⛶ To‘liq ekran</button></div><div class="player-wrap" id="player-wrap"><button id="exit-theater" class="secondary" hidden>✕ Kichraytirish</button><video id="player" playsinline preload="metadata" controlslist="nodownload noremoteplayback" disablepictureinpicture></video><div id="video-loading" role="status" aria-live="polite" hidden><span class="video-spinner" aria-hidden="true"></span><span id="video-loading-text">Video yuklanmoqda…</span><button id="retry-video" type="button" class="secondary" hidden>↻ Qayta urinish</button></div><button id="start-player" class="play-overlay">▶ Tomoshani boshlash</button></div>
-      <div id="owner-controls" class="owner-controls" hidden><button id="toggle-play" class="secondary">▶ / Ⅱ</button><input id="seek" type="range" min="0" max="100" value="0" aria-label="Kino vaqti"><span id="position-label">0:00</span></div>
+      <div id="owner-controls" class="owner-controls" hidden><button id="toggle-play" class="secondary">▶ / Ⅱ</button><input id="seek" type="range" min="0" max="100" value="0" aria-label="Kino vaqti"></div>
+      <p id="position-label" class="muted" aria-label="Kino vaqti">0:00 / 0:00</p><p id="room-countdown" role="status" hidden></p>
       <div class="room-meta"><div id="members" class="members"></div><button id="share-room" class="secondary">↗ Do‘stni chaqirish</button></div>
       <input id="room-invite" readonly aria-label="Kabinet havolasi" hidden><p id="room-status" class="muted"></p><div id="room-access-tools"></div><div id="room-chat" class="chat-shell"></div>
       <details id="room-friends-panel" class="panel compact-panel"><summary>Do‘stni kabinetga taklif qilish</summary><div id="room-friends"></div></details>

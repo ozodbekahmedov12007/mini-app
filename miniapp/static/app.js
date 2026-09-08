@@ -11,7 +11,7 @@ let noticeTimer;
 function notify(text) { $('notice').textContent=text; $('notice').hidden=false; clearTimeout(noticeTimer); noticeTimer=setTimeout(()=>$('notice').hidden=true,5500); }
 function node(tag, className, text) { const el=document.createElement(tag); if(className)el.className=className; if(text!==undefined)el.textContent=text; return el; }
 function button(text, className, fn) {const el=node('button',className,text);el.type='button';el.onclick=()=>Promise.resolve().then(fn).catch(e=>notify(e.message));return el;}
-function avatar(user) {const el=node('span','avatar',(user.name||'K').slice(0,1).toUpperCase());if(user.photo?.startsWith('https://')){const img=node('img');img.src=user.photo;img.referrerPolicy='no-referrer';img.alt='';img.onerror=()=>img.remove();el.replaceChildren(img);}el.title=user.name||'';return el;}
+function avatar(user) {const el=node('span','avatar',(user.name||'K').slice(0,1).toUpperCase());if(user.photo?.startsWith('https://')){const img=node('img');img.src=user.photo;img.referrerPolicy='no-referrer';img.loading='lazy';img.decoding='async';img.alt='';img.onerror=()=>img.remove();el.replaceChildren(img);}el.title=user.name||'';return el;}
 function stamp(seconds) {const d=new Date(seconds*1000),months=['yan','fev','mar','apr','may','iyn','iyl','avg','sen','okt','noy','dek'];return `${d.getDate()} ${months[d.getMonth()]} · ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;}
 function duration(seconds) {return `${Math.floor(seconds/60)}:${String(Math.floor(seconds%60)).padStart(2,'0')}`;}
 async function api(path,body,signal) {const r=await fetch('/api/'+path,{signal,method:body===undefined?'GET':'POST',headers:{'X-Telegram-Init-Data':initData,'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});const data=await r.json();if(!r.ok){const e=new Error(data.error||'Ulanish xatosi');e.status=r.status;throw e;}return data;}
@@ -50,18 +50,19 @@ async function screenings(){
 }
 async function join(data){
  if(data.room){const admission=await api('room/request',{room:data.room});if(admission.status!=='approved'){state.pendingRoom=data.room;await show('waiting');$('waiting-status').textContent=admission.status==='rejected'?'Kabinet egasi so‘rovingizni rad etdi.':'So‘rov yuborildi. Kabinet egasi ruxsat bergach, quyidagi tugmani bosing.';return;}}
- const room=await api('join',data);state.pendingRoom=null;$('room-poll-panel').open=false;$('room-friends-panel').open=false;$('room-poll').replaceChildren();$('room-friends').replaceChildren();state.room=room;state.mediaLoaded=false;state.playbackExpiry=0;await show('room');renderRoom(room);clearInterval(state.timer);state.timer=setInterval(tickRoom,20000);await loadPlayback();}
+ recoveryAttempts=0;const room=await api('join',data);state.pendingRoom=null;$('room-poll-panel').open=false;$('room-friends-panel').open=false;$('room-poll').replaceChildren();$('room-friends').replaceChildren();state.room=room;state.mediaLoaded=false;state.playbackExpiry=0;await show('room');renderRoom(room);clearInterval(state.timer);state.timer=setInterval(()=>tickRoom(false),20000);await loadPlayback();}
 function renderRoom(room){
-  state.room=room;$('room-invite').hidden=!room.private;if(room.private&&state.botUsername)$('room-invite').value=`https://t.me/${state.botUsername}?startapp=room_${room.id}`;$('room-title').textContent=room.title;$('room-count').textContent=`${room.members.length} / 20`;
+  state.room=room;state.serverOffset=room.server_time-Date.now()/1000;$('room-invite').hidden=!room.private;if(room.private&&state.botUsername)$('room-invite').value=`https://t.me/${state.botUsername}?startapp=room_${room.id}`;$('room-title').textContent=room.title;$('room-count').textContent=`${room.members.length} / 20`;
   $('members').replaceChildren(...room.members.map(avatar));
   $('owner-controls').hidden=!(room.private&&room.owner===state.user.id);
   $('room-status').textContent=room.private?`${room.movie_title||room.title} · boshqaruv kabinet egasida`:'Ommaviy seans · hamma bir vaqtda tomosha qiladi';
-  $('seek').max=room.duration;$('seek').value=Math.floor(room.position);$('position-label').textContent=duration(room.position);
-  clearTimeout(endTimer);if(!room.personal)endTimer=setTimeout(()=>{exitRoom().catch(e=>notify(e.message));notify('Seans yakunlandi. Suhbatni davom ettiramiz!');},Math.max(0,(room.ends-room.server_time)*1000));
+  $('seek').max=room.duration;$('seek').value=Math.floor(room.position);updateVideoClock();
+  clearTimeout(endTimer);if(!room.personal||room.ends<253402300799)endTimer=setTimeout(()=>{exitRoom().catch(e=>notify(e.message));notify('Seans yakunlandi. Suhbatni davom ettiramiz!');},Math.max(0,(room.ends-room.server_time)*1000));
   renderAccess(room);
   syncPlayer(room);
 }
-function syncPlayer(room){const p=$('player');if(!state.mediaLoaded)return;if(Math.abs(p.currentTime-room.position)>2.5)p.currentTime=room.position;if(room.playing){p.play().then(()=>$('start-player').hidden=true).catch(()=>$('start-player').hidden=false);}else p.pause();}
+function updateVideoClock(){const p=$('player');$('position-label').textContent=duration(p.currentTime||0)+' / '+duration(Number.isFinite(p.duration)?p.duration:(state.room?.duration||0));if(document.activeElement!==$('seek'))$('seek').value=Math.floor(p.currentTime||0);}
+function syncPlayer(room){const p=$('player');if(!state.mediaLoaded)return;if(!p.seeking&&(state.needsSeek||p.readyState>=3)&&Math.abs(p.currentTime-room.position)>2.5)p.currentTime=room.position;state.needsSeek=false;if(room.playing){p.play().then(()=>$('start-player').hidden=true).catch(()=>$('start-player').hidden=false);}else p.pause();}
 let playbackRequest=null;
 async function loadPlayback(){
  const rid=state.room?.id;if(!rid)return;
@@ -73,7 +74,7 @@ async function loadPlayback(){
   if(state.room?.id!==rid||playbackRequest!==request)return;
   state.playbackExpiry=Date.now()+data.expires_in*1000;
   const p=$('player');state.mediaLoaded=false;
-  p.onloadedmetadata=()=>{if(state.room?.id===rid){state.mediaLoaded=true;syncPlayer(state.room);}};
+  p.onloadedmetadata=()=>{if(state.room?.id===rid){state.mediaLoaded=true;state.needsSeek=true;syncPlayer(state.room);}};
   p.src=data.url;renderRoom(data.room);
  }catch(e){
   if(state.room?.id!==rid||playbackRequest!==request)return;
@@ -82,19 +83,20 @@ async function loadPlayback(){
  }finally{clearTimeout(timeout);if(playbackRequest===request){playbackRequest=null;$('retry-video').disabled=false;}}
 }
 
-let ticking=false;
-async function tickRoom(){if(!state.room||ticking)return;const rid=state.room.id;ticking=true;try{const room=await api('room?id='+encodeURIComponent(rid));if(state.room?.id===rid){renderRoom(room);if($('room-poll-panel').open)await refreshPoll();}}catch(e){if(state.room?.id!==rid)return;if([403,404,410].includes(e.status)){await exitRoom();notify(e.message);}else notify(e.message);}finally{ticking=false;}}
+let ticking=false,lastRoomCheck=0;
+async function tickRoom(force=true){if(!state.room||ticking||(!force&&Date.now()-lastRoomCheck<10000))return;const rid=state.room.id;ticking=true;try{const room=await api('room?id='+encodeURIComponent(rid));if(state.room?.id===rid){lastRoomCheck=Date.now();renderRoom(room);if($('room-poll-panel').open)await refreshPoll();}}catch(e){if(state.room?.id!==rid)return;if([403,404,410].includes(e.status)){await exitRoom();notify(e.message);}else notify(e.message);}finally{ticking=false;}}
 $('start-player').onclick=()=>{if(state.room?.private&&!state.room.playing){if(state.room.owner===state.user.id)control(state.room.position,true).catch(e=>notify(e.message));else notify('Xona egasi kinoni boshlashini kuting');return;}const p=$('player');p.play().then(()=>$('start-player').hidden=true).catch(()=>notify('Videoni ijro etib bo‘lmadi. Internet yoki video formatini tekshiring.'));};
 $('player').onerror=()=>{
  if(!state.room)return;
  const code=$('player').error?.code;
+ if((code===2||Date.now()>=state.playbackExpiry)&&scheduleVideoRecovery())return;
  reportVideo(({2:'video_network',3:'video_decode',4:'video_format'})[code]||'video_unknown');
  videoFailed(code===3||code===4?'Video ochilmadi. Qayta urinib ko‘ring.':'Video yuklanmadi. Internetni tekshiring va qayta urining.');
 };
 async function control(position,playing){renderRoom(await api('control',{room:state.room.id,position:Math.floor(position),playing}));}
 $('toggle-play').onclick=()=>control($('player').currentTime,!state.room.playing).catch(e=>notify(e.message));
 $('seek').onchange=()=>control(Number($('seek').value),state.room.playing).catch(e=>notify(e.message));
-async function exitRoom(){playbackRequest?.abort();playbackRequest=null;clearVideoLoading();await closeTheater();clearInterval(state.timer);clearTimeout(endTimer);state.timer=null;state.room=null;state.mediaLoaded=false;const p=$('player');p.pause();p.removeAttribute('src');p.load();try{await api('leave',{});}catch{}await show('chat');}
+async function exitRoom(){clearTimeout(recoveryTimer);recoveryTimer=null;recoveryAttempts=0;playbackRequest?.abort();playbackRequest=null;clearVideoLoading();await closeTheater();clearInterval(state.timer);clearTimeout(endTimer);state.timer=null;state.room=null;state.mediaLoaded=false;const p=$('player');p.pause();p.removeAttribute('src');p.load();try{await api('leave',{});}catch{}await show('chat');}
 $('leave-room').onclick=()=>exitRoom().catch(e=>notify(e.message));
 $('share-room').onclick=async()=>{try{if(!state.botUsername)throw new Error('Bot havolasi hali sozlanmagan');const url=`https://t.me/${state.botUsername}?startapp=room_${state.room.id}`;if(tg?.openTelegramLink)tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent('Birga kino ko‘ramiz: '+state.room.title)}`);else{await navigator.clipboard.writeText(url);notify('Xona havolasi nusxalandi');}}catch(e){notify(e.message);}};
 function profile(){const card=$('profile-card');card.replaceChildren();const who=node('div','profile-name');who.append(avatar(state.user),node('h2','',state.user.name));card.append(who,node('p','muted',`Telegram ID: ${state.user.id}`),node('span','pill',state.user.vip_until>Date.now()/1000?`✦ VIP · ${stamp(state.user.vip_until)} gacha`:'ODDIY OBUNA'));if(state.room)card.append(button('▶ Xonaga qaytish','primary',()=>show('room')));}
@@ -113,7 +115,7 @@ async function openChat(target,scope){
 async function connectChat(chat){
   if(state.chat!==chat)return;
   try{const ticket=await api('socket-ticket',{scope:chat.scope});if(state.chat!==chat)return;const ws=new WebSocket(`${location.protocol==='https:'?'wss:':'ws:'}//${location.host}/ws?ticket=${encodeURIComponent(ticket.ticket)}`);state.socket=ws;
-    ws.onmessage=()=>{if(state.chat===chat){refreshChat(chat).catch(e=>notify(e.message));if(chat.scope!=='global')tickRoom();}};
+    ws.onmessage=event=>{if(state.chat===chat){let changed=true;try{changed=JSON.parse(event.data).changed!==false;}catch{}if(changed&&!document.hidden)refreshChat(chat).catch(e=>notify(e.message));if(chat.scope!=='global')tickRoom(changed);}};
     ws.onclose=event=>{if(state.chat!==chat)return;if(event.code===4001&&chat.scope!=='global')tickRoom();setTimeout(()=>{if(state.chat===chat)connectChat(chat);},3000+Math.random()*2000);};
   }catch(e){if(state.chat===chat){notify(e.message);setTimeout(()=>connectChat(chat),10000);}}
 }
@@ -192,7 +194,7 @@ $('movie-file').onchange=()=>{
 $('screening-form').elements.minutes.step='0.01';
 $('screening-form').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget,submit=$('publish-button');submit.disabled=true;$('upload-progress').hidden=false;try{const file=$('movie-file').files[0];if(!file){if(!form.elements.movie_code.value)throw new Error('Kino kodini topib, natijadan kinoni tanlang');$('upload-status').textContent='Telegramdagi kino tayyorlanmoqda…';await api('screening/telegram',{code:form.elements.movie_code.value,starts:form.elements.starts.value?Math.floor(new Date(form.elements.starts.value).getTime()/1000):null,vip:form.elements.vip.checked});form.reset();$('upload-status').textContent='Kino qo‘shildi. Seanslar bo‘limidan oching.';await dashboard();return;}const asset=await upload(file,'movie',percent=>{$('upload-progress').value=percent;$('upload-status').textContent=`Yuklanmoqda: ${percent}%`;});await api('screening',{title:form.elements.title.value,description:form.elements.description.value,movie_code:form.elements.movie_code.value||null,starts:form.elements.starts.value?Math.floor(new Date(form.elements.starts.value).getTime()/1000):Math.floor(Date.now()/1000)+5,duration:Math.round(Number(form.elements.minutes.value)*60),vip:form.elements.vip.checked,asset_id:asset.id});form.reset();$('upload-status').textContent='Seans rejalashtirildi';notify('Seans yaratildi');await dashboard();}catch(err){$('upload-status').textContent=err.message;notify(err.message);}finally{submit.disabled=false;}};
 $('restriction-form').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget;try{await api('moderate',{user_id:form.elements.user_id.value,hours:form.elements.hours.value,banned:form.elements.banned.checked});notify('Cheklov yangilandi');}catch(err){notify(err.message);}};
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&state.room)tickRoom();});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(state.room)tickRoom();if(state.chat)refreshChat(state.chat).catch(e=>notify(e.message));}});
 async function boot(){if(!initData){await show('login');return;}try{const info=await api('me');state.user=info.user;state.mediaReady=info.media_ready;$('media-profile-help').hidden=!info.media_ready;state.botUsername=info.bot_username;$('file-upload-options').hidden=!info.media_ready;if(!info.media_ready){$('movie-file').value='';$('movie-file').disabled=true;}$('profile-button').replaceChildren(...avatar(state.user).childNodes);$('admin-nav').hidden=!state.user.admin;const param=tg?.initDataUnsafe?.start_param||new URLSearchParams(location.search).get('tgWebAppStartParam')||'';if(param.startsWith('room_'))await join({room:param.slice(5)});else await show('home');}catch(e){notify(e.message);if(!state.user)await show('login');else await show('home');}}
 boot();
 
@@ -376,13 +378,42 @@ function clearVideoLoading(){clearTimeout(videoWaitTimer);videoWaitTimer=null;$(
 function videoFailed(message){
  clearTimeout(videoWaitTimer);$('video-loading').hidden=false;$('video-loading').classList.add('failed');$('video-loading-text').textContent=message;$('retry-video').hidden=false;$('player').setAttribute('aria-busy','false');
 }
-$('retry-video').onclick=()=>{clearVideoLoading();loadPlayback().catch(e=>videoFailed(e.message));};
+let recoveryAttempts=0,recoveryTimer=null;
+function scheduleVideoRecovery(){if(!state.room||playbackRequest||recoveryTimer||!navigator.onLine||recoveryAttempts>=3)return false;const rid=state.room.id;videoLoading('Video qayta ulanmoqda…');recoveryTimer=setTimeout(()=>{recoveryTimer=null;if(state.room?.id===rid)loadPlayback();},1000*2**recoveryAttempts++);return true;}
+$('retry-video').onclick=()=>{recoveryAttempts=0;clearVideoLoading();loadPlayback().catch(e=>videoFailed(e.message));};
 const watchedVideo=$('player');
 for(const event of ['loadstart','waiting','seeking'])watchedVideo.addEventListener(event,()=>videoLoading(event==='loadstart'?'Video yuklanmoqda…':'Video yuklanishi kutilmoqda…'));
 watchedVideo.addEventListener('stalled',()=>{if(watchedVideo.readyState<3)videoLoading();});
 watchedVideo.addEventListener('playing',()=>{videoLastProgress=Date.now();clearVideoLoading();});
 watchedVideo.addEventListener('canplay',()=>{videoLastProgress=Date.now();clearVideoLoading();});
 watchedVideo.addEventListener('seeked',()=>{if(watchedVideo.readyState>=3)clearVideoLoading();});
-watchedVideo.addEventListener('timeupdate',()=>{if(Math.abs(watchedVideo.currentTime-videoLastTime)>.05){videoLastTime=watchedVideo.currentTime;videoLastProgress=Date.now();if(!watchedVideo.seeking&&watchedVideo.readyState>=3)clearVideoLoading();}});
-watchedVideo.addEventListener('ended',clearVideoLoading);
-setInterval(()=>{if(state.room&&state.view==='room'&&state.room.playing&&!watchedVideo.paused&&!watchedVideo.ended&&!document.hidden&&Date.now()-videoLastProgress>6000)videoLoading();},2000);
+watchedVideo.addEventListener('timeupdate',()=>{updateVideoClock();if(Math.abs(watchedVideo.currentTime-videoLastTime)>.05){videoLastTime=watchedVideo.currentTime;videoLastProgress=Date.now();if(!watchedVideo.seeking&&watchedVideo.readyState>=3)clearVideoLoading();}});
+watchedVideo.addEventListener('ended',async()=>{clearVideoLoading();if(state.room?.personal&&state.room.owner===state.user.id){try{renderRoom(await api('cabinet/finish',{room:state.room.id}));}catch(e){notify(e.message);}}});
+setInterval(()=>{const r=state.room;const box=$('room-countdown');box.hidden=!(r?.personal&&r.ends<253402300799);if(!box.hidden)box.textContent='Kino tugadi. Kabinet '+Math.max(0,Math.ceil(r.ends-Date.now()/1000-(state.serverOffset||0)))+' soniyadan keyin yopiladi.';},1000);
+setInterval(()=>{if(state.room&&state.view==='room'&&state.room.playing&&!watchedVideo.paused&&!watchedVideo.ended&&!document.hidden&&Date.now()-videoLastProgress>6000){videoLoading();if(Date.now()-videoLastProgress>20000)scheduleVideoRecovery();}},2000);
+
+// Visual viewport follows the mobile keyboard without shrinking the video itself.
+let viewportFrame=0;
+function fitMobileViewport(){
+ cancelAnimationFrame(viewportFrame);viewportFrame=requestAnimationFrame(()=>{
+  const viewport=window.visualViewport;
+  const editing=!!document.activeElement?.matches('input,textarea');
+  const inset=viewport&&editing?Math.max(0,innerHeight-viewport.height-viewport.offsetTop):0;
+  document.body.classList.toggle('keyboard-open',inset>100);
+  document.documentElement.style.setProperty('--keyboard-inset',inset+'px');
+ });
+}
+window.visualViewport?.addEventListener('resize',fitMobileViewport);
+window.visualViewport?.addEventListener('scroll',fitMobileViewport);
+document.addEventListener('focusin',fitMobileViewport);
+document.addEventListener('focusout',fitMobileViewport);
+window.addEventListener('offline',()=>{if(state.room)videoLoading('Internet uzildi. Ulanish kutilmoqda…');else notify('Internet aloqasi yo‘q.');});
+window.addEventListener('online',()=>{if(state.room)tickRoom();else if(state.view==='home')Promise.all([screenings(),loadCabinets()]).catch(e=>notify(e.message));});
+
+// Renew the authenticated range URL without replacing the playing media source.
+let renewingPlayback=false;
+setInterval(async()=>{const rid=state.room?.id;if(!rid||renewingPlayback||playbackRequest||!navigator.onLine||Date.now()<state.playbackExpiry-60000)return;
+ renewingPlayback=true;try{const data=await api('playback?room='+encodeURIComponent(rid));if(state.room?.id===rid){if($('player').getAttribute('src')===data.url)state.playbackExpiry=Date.now()+data.expires_in*1000;else scheduleVideoRecovery();}}catch{}finally{renewingPlayback=false;}
+},15000);
+
+$('animate-logo').onclick=()=>{const mark=$('animate-logo');mark.classList.remove('assembling');requestAnimationFrame(()=>requestAnimationFrame(()=>mark.classList.add('assembling')));};

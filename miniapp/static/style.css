@@ -27,3 +27,29 @@ html,body{overscroll-behavior-y:none}#refresh-hint{position:fixed;top:8px;left:5
 .compact-panel{padding:16px;margin:12px 0}.compact-panel>summary{cursor:pointer;font-weight:700;font-size:14px;padding:4px 0}.compact-panel .section-heading{margin:0 0 12px}.compact-panel h2{font-size:18px}.compact-panel h3{font-size:15px;margin-top:16px}.social-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:12px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.social-row strong{flex:1;min-width:120px;font-size:13px}.social-row small{flex-basis:100%;font-size:11px}.social-row .text-button{font-size:11px;min-height:36px}.social-row .secondary,.social-row .primary{font-size:12px;min-height:38px;padding:8px 12px}.library-entry{display:block;text-align:left;width:100%;margin:8px 0;white-space:normal;overflow-wrap:anywhere}.save-movie{font-size:11px;min-height:36px;padding:7px 12px;margin-bottom:12px}#room-access-tools>.secondary{font-size:11px;min-height:36px;padding:8px 12px}#room-access-tools p{font-size:11px}#room-access-tools:empty{display:none}#friend-form{margin:14px 0}#friend-requests:empty,#friend-sent:empty{display:none}#check-result{font-size:12px;line-height:1.5}#diagnostics-errors{max-height:360px;overflow:auto}.compact-panel label{font-size:12px}#view-waiting .primary,#view-waiting .secondary{margin:6px 0}#room-friends-panel,#room-poll-panel{margin:10px 0;padding:12px}.theater #room-access-tools{display:none}
 
 #video-loading{position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:20px;background:#0008;text-align:center;font-size:13px;color:#fff;pointer-events:none}#video-loading .secondary{pointer-events:auto;min-height:42px}.video-spinner{width:36px;height:36px;border:3px solid #ffffff40;border-top-color:#ffb37b;border-radius:50%;animation:video-spin .9s linear infinite}#video-loading.failed .video-spinner{display:none}.player-wrap:has(#video-loading:not([hidden])) #start-player{visibility:hidden}@keyframes video-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.video-spinner{animation-duration:2s}}
+
+/* Mobile touch targets, keyboard and safe areas. */
+@media(max-width:680px){
+ body{font-size:14px}.topbar{padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
+ main{padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
+ .primary,.secondary,.text-button,.message-actions button{min-height:44px}.room-tools button,.watching-room .room-meta .secondary,.social-row .secondary,.social-row .primary{min-height:44px}
+ .card-actions{flex-wrap:wrap}.card-actions button{flex:1;white-space:normal}.card-body p{margin-bottom:12px}.poster{height:105px}
+ .chat-compose textarea{min-height:44px;max-height:120px;font-size:16px}.compose-buttons{gap:8px;flex-wrap:wrap}
+ .keyboard-open .bottom-nav{display:none}.keyboard-open main{padding-bottom:calc(20px + var(--keyboard-inset,0px))}
+ input,textarea{scroll-margin-bottom:120px}.player-wrap{border-radius:12px}
+ #notice{max-width:calc(100vw - 28px);font-size:12px;pointer-events:none}
+ .panel label,.social-row{overflow-wrap:anywhere}.library-entry{min-height:44px}
+}
+@media(max-width:680px) and (orientation:landscape){.watching-room .player-wrap{max-height:64dvh;aspect-ratio:16/9;margin-inline:auto}.watching-room .topbar{display:none}}
+
+.logo-assemble{position:relative;display:block;width:100px;height:100px;flex:0 0 100px;padding:0;border:0;background:none;overflow:visible}
+.logo-assemble span{position:absolute;inset:0;background:url('/static/movieray.jpg') center/cover;border-radius:50%;pointer-events:none}
+.logo-assemble span:nth-child(1){clip-path:inset(0 50% 50% 0);--x:-90px;--y:-90px}
+.logo-assemble span:nth-child(2){clip-path:inset(0 0 50% 50%);--x:90px;--y:-90px}
+.logo-assemble span:nth-child(3){clip-path:inset(50% 50% 0 0);--x:-90px;--y:90px}
+.logo-assemble span:nth-child(4){clip-path:inset(50% 0 0 50%);--x:90px;--y:90px}
+.logo-assemble.assembling span{animation:logo-arrive .85s cubic-bezier(.2,.8,.2,1) both}
+@keyframes logo-arrive{from{transform:translate(var(--x),var(--y)) rotate(25deg);opacity:0}to{transform:none;opacity:1}}
+#position-label{font-variant-numeric:tabular-nums;text-align:right;margin:8px 0}
+#room-countdown{padding:12px;border-radius:12px;background:#ffb77d;color:#17191d}
+@media(prefers-reduced-motion:reduce){.logo-assemble.assembling span{animation:none}}
