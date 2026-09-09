@@ -1,0 +1,24 @@
+// Public Telegram artwork; authenticated pack lookup, bounded visible animations.
+const stickerPacks=new Map();
+const stickerPlayers=new Map();
+const stickerObserver=new IntersectionObserver(entries=>{for(const e of entries){const player=stickerPlayers.get(e.target);if(player){if(e.isIntersecting&&!document.hidden)player.play();else player.pause();}}});
+function cleanStickerPlayers(){for(const [element,player] of stickerPlayers){if(!element.isConnected){player.destroy?.();player.pause?.();stickerObserver.unobserve(element);stickerPlayers.delete(element);}}}
+document.addEventListener('visibilitychange',()=>{for(const player of stickerPlayers.values())player.pause();if(!document.hidden)for(const element of stickerPlayers.keys()){stickerObserver.unobserve(element);stickerObserver.observe(element);}});
+setInterval(cleanStickerPlayers,5000);
+async function getStickerPack(name){if(!stickerPacks.has(name)){const promise=api('stickers?pack='+encodeURIComponent(name));stickerPacks.set(name,promise);promise.catch(()=>stickerPacks.delete(name));if(stickerPacks.size>24)stickerPacks.delete(stickerPacks.keys().next().value);}return stickerPacks.get(name);}
+async function mountTelegramSticker(element,pack,id){
+ try{const data=await getStickerPack(pack);const item=data.items.find(i=>i.id===id);if(!item||!element.isConnected)return;cleanStickerPlayers();element.textContent=item.emoji||'🙂';element.title=item.emoji||'Telegram stikeri';
+ if(item.kind==='tgs'&&window.lottie&&stickerPlayers.size<24&&!matchMedia('(prefers-reduced-motion:reduce)').matches){const response=await fetch(item.url);if(!response.ok)throw Error();const animationData=await response.json();if(!element.isConnected)return;element.textContent='';const player=lottie.loadAnimation({container:element,renderer:'svg',loop:true,autoplay:false,animationData});stickerPlayers.set(element,player);stickerObserver.observe(element);}
+ else if(item.kind==='video'&&stickerPlayers.size<24){const video=document.createElement('video');video.muted=true;video.loop=true;video.playsInline=true;video.preload='metadata';video.src=item.url;video.onerror=()=>{element.textContent=item.emoji||'🙂';};element.replaceChildren(video);stickerPlayers.set(element,{play:()=>video.play().catch(()=>{}),pause:()=>video.pause(),destroy:()=>{video.pause();video.removeAttribute('src');video.load();}});stickerObserver.observe(element);}
+ else if(item.kind==='image'){const image=document.createElement('img');image.loading='lazy';image.src=item.url;image.alt=item.emoji||'Stiker';element.replaceChildren(image);}
+ }catch{element.textContent='🙂';element.title='Stiker vaqtincha yuklanmadi';}
+}
+function renderTelegramText(container,text){const pattern=/\[tg:([A-Za-z0-9_]{1,64}):(\d{1,22})\]/g;let from=0;for(const match of text.matchAll(pattern)){container.append(document.createTextNode(text.slice(from,match.index)));const slot=document.createElement('span');slot.className=text.trim()===match[0]?'telegram-sticker':'telegram-emoji';slot.textContent='🙂';container.append(slot);setTimeout(()=>mountTelegramSticker(slot,match[1],match[2]),0);from=match.index+match[0].length;}container.append(document.createTextNode(text.slice(from)));}
+function buildStickerPicker(panel,input){
+ const unicode=node('div','emoji-grid');for(const emoji of ['😀','😂','😍','🥰','😎','😢','😭','😡','🤔','👍','👏','❤️','🔥','🎬','🍿','👋'])unicode.append(button(emoji,'emoji-choice',()=>insert(emoji)));
+ const packInput=node('input');packInput.placeholder='t.me/addstickers/… yoki addemoji/…';packInput.setAttribute('aria-label','Telegram to‘plami havolasi');
+ const list=node('div','telegram-sticker-grid'),status=node('small','muted');
+ function insert(value){const start=input.selectionStart??input.value.length,end=input.selectionEnd??start;if(input.value.length-(end-start)+value.length>500){notify('500 belgilik limit');return;}input.setRangeText(value,start,end,'end');input.oninput();input.focus();}
+ async function load(name){status.textContent='To‘plam yuklanmoqda…';list.replaceChildren();try{const data=await getStickerPack(name);if(!panel.isConnected)return;status.textContent=data.title;let offset=0;const more=button('Yana stikerlar','secondary',page);function page(){more.remove();for(const item of data.items.slice(offset,offset+24)){const pick=button('','sticker-pick',()=>{insert(`[tg:${data.name}:${item.id}]`);});pick.setAttribute('aria-label',item.emoji||'Stiker');const slot=node('span','telegram-sticker');slot.textContent=item.emoji||'🙂';pick.append(slot);list.append(pick);setTimeout(()=>mountTelegramSticker(slot,data.name,item.id),0);}offset+=24;if(offset<data.items.length)list.append(more);}page();}catch(e){status.textContent=e.message;}}
+ panel.append(unicode,packInput,button('To‘plamni ochish','secondary',()=>load(packInput.value||'animated_emoji')),status,list,node('small','muted','Emoji yoki stikerni tanlang, so‘ng Yuborish tugmasini bosing.'));
+}

@@ -13,6 +13,7 @@ from aiohttp import web
 from miniapp.core import Store, Problem, admin
 from miniapp.storage import Storage
 from miniapp.telegram_media import TelegramMedia
+from miniapp.telegram_stickers import TelegramStickers
 
 log = logging.getLogger("miniapp")
 STATIC = Path(__file__).parent / "static"
@@ -146,7 +147,7 @@ async def api(request):
         elif path == "messages":
             result = {"messages": await db(app, "history", user, request.query.get("scope", "global"), request.query.get("before"))}
         elif path == "playback":
-            result = await app["telegram"].playback(app, user, request.query.get("room", ""), request.headers["X-Telegram-Init-Data"])
+            result = await app["telegram"].playback(app, user, request.query.get("room", ""), request.headers["X-Telegram-Init-Data"],request.query.get("quality","original"))
             if result is None:
                 result = await asyncio.to_thread(app["storage"].playback, user, request.query.get("room", ""))
         elif path == "media":
@@ -167,11 +168,25 @@ async def api(request):
                       "telegram_configured": app["telegram"].configured,
                       "uploads_configured": bool(app["storage"].bucket),
                       "streams": sum(app["telegram"].active.values())}
+        elif path == "video-quality":
+            room=await db(app,"room",user,request.query.get("room",""))
+            asset=await db(app,"one","SELECT object_key,upload_id FROM assets WHERE id=(SELECT asset_id FROM screenings WHERE id=?)",(room["screening_id"],))
+            result=app["telegram"].quality.status(json.loads(asset["object_key"])) if asset and asset["upload_id"]=="telegram" else {"ready":[],"enabled":False,"state":"unavailable"}
+        elif path == "stickers":
+            throttle(app,"stickers:"+str(user["id"]),15)
+            result=await app["stickers"].pack(request.query.get("pack","animated_emoji"))
         elif path == "catalog":
             throttle(app, "catalog:"+str(user["id"]), 20)
             result = await app["bridge"].request("catalog", request.headers["X-Telegram-Init-Data"], query=request.query.get("q", ""))
     elif request.method == "POST":
-        if path == "cabinet/create":
+        if path == "video-quality/prepare":
+            admin(user)
+            throttle(app,"quality-prepare:"+str(user["id"]),3)
+            room=await db(app,"room",user,str(data.get("room","")))
+            asset=await db(app,"one","SELECT object_key,upload_id FROM assets WHERE id=(SELECT asset_id FROM screenings WHERE id=?)",(room["screening_id"],))
+            if not asset or asset["upload_id"]!="telegram":raise Problem("Telegram kinosini tanlang")
+            result=await app["telegram"].quality.prepare(json.loads(asset["object_key"]))
+        elif path == "cabinet/create":
             throttle(app,"cabinet-create:"+str(user["id"]),5)
             source=await app["bridge"].request("source",request.headers["X-Telegram-Init-Data"],code=data.get("code"))
             result=await app["telegram"].create_cabinet(app,user,source,data)
@@ -345,10 +360,12 @@ def create_app(store=None, bridge=None, storage=None, origin=None):
     app["sockets"], app["tickets"] = {}, {}
     app["rates"] = OrderedDict()
     app["telegram"] = TelegramMedia()
+    app["stickers"] = TelegramStickers(app["telegram"])
     if bridge:
         app["bridge"] = bridge
     app.cleanup_ctx.append(lifecycle)
     app.router.add_get("/telegram-video/{token}", app["telegram"].stream)
+    app.router.add_get("/telegram-sticker/{pack}/{doc}",app["stickers"].file)
     app.router.add_get("/health", health)
     app.router.add_route("*", "/api/{path:.*}", api)
     app.router.add_get("/ws", socket)

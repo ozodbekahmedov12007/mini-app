@@ -19,7 +19,7 @@ async function show(view) {
   if(!state.user&&view!=='login')return;
   if(view==='admin'&&!state.user?.admin)return;
   if(state.view==='room'&&view!=='room'){$('player').pause();state.view=view;await closeTheater();}
-  state.view=view;document.body.classList.toggle('watching-room',view==='room');
+  state.view=view;document.body.classList.toggle('watching-room',view==='room');document.body.classList.toggle('chat-view',view==='chat');
   for(const el of document.querySelectorAll('.view'))el.hidden=el.id!=='view-'+view;
   for(const el of document.querySelectorAll('[data-view]'))el.classList.toggle('active',el.dataset.view===view);
   closeSocket();
@@ -51,7 +51,7 @@ async function screenings(){
 }
 async function join(data){
  if(data.room){const admission=await api('room/request',{room:data.room});if(admission.status!=='approved'){state.pendingRoom=data.room;await show('waiting');$('waiting-status').textContent=admission.status==='rejected'?'Kabinet egasi so‘rovingizni rad etdi.':'So‘rov yuborildi. Kabinet egasi ruxsat bergach, quyidagi tugmani bosing.';return;}}
- recoveryAttempts=0;const room=await api('join',data);state.pendingRoom=null;$('room-poll-panel').open=false;$('room-friends-panel').open=false;$('room-poll').replaceChildren();$('room-friends').replaceChildren();state.room=room;state.mediaLoaded=false;state.playbackExpiry=0;await show('room');renderRoom(room);clearInterval(state.timer);state.timer=setInterval(()=>tickRoom(false),20000);await loadPlayback();}
+ recoveryAttempts=0;state.availableQualities=[];state.autoQuality=null;state.selectedQuality=0;state.qualityPreference='auto';state.lastControlRevision=undefined;const room=await api('join',data);state.pendingRoom=null;$('room-poll-panel').open=false;$('room-friends-panel').open=false;$('room-poll').replaceChildren();$('room-friends').replaceChildren();state.room=room;state.mediaLoaded=false;state.playbackExpiry=0;await show('room');renderRoom(room);clearInterval(state.timer);state.timer=setInterval(()=>tickRoom(false),20000);await loadPlayback();}
 function renderRoom(room){
   state.room=room;state.serverOffset=room.server_time-Date.now()/1000;$('room-invite').hidden=!room.private;if(room.private&&state.botUsername)$('room-invite').value=`https://t.me/${state.botUsername}?startapp=room_${room.id}`;$('room-title').textContent=room.title;$('room-count').textContent=`${room.members.length} / 20`;
   $('members').replaceChildren(...room.members.map(avatar));
@@ -63,20 +63,31 @@ function renderRoom(room){
   syncPlayer(room);
 }
 function updateVideoClock(){const p=$('player');$('position-label').textContent=duration(p.currentTime||0)+' / '+duration(Number.isFinite(p.duration)?p.duration:(state.room?.duration||0));if(document.activeElement!==$('seek'))$('seek').value=Math.floor(p.currentTime||0);}
-function syncPlayer(room){const p=$('player');if(!state.mediaLoaded||state.view!=='room')return;if(!p.seeking&&(state.needsSeek||p.readyState>=3)&&Math.abs(p.currentTime-room.position)>2.5)p.currentTime=room.position;state.needsSeek=false;if(room.playing){p.play().then(()=>$('start-player').hidden=true).catch(error=>{if(error.name==='NotAllowedError'){clearVideoLoading();$('start-player').hidden=false;state.autoplayBlocked=true;}});}else p.pause();}
+function syncPlayer(room){
+ const p=$('player');if(!state.mediaLoaded||state.view!=='room')return;
+ const commanded=room.private&&state.lastControlRevision!==undefined&&room.control_revision!==state.lastControlRevision;
+ if(!p.seeking&&(state.needsSeek||commanded)){p.currentTime=state.resumePosition??room.position;state.resumePosition=null;state.needsSeek=false;state.bufferHold=false;}
+ state.lastControlRevision=room.control_revision;
+ // Never discard a growing buffer just to chase the wall clock.
+ if(!room.playing){state.bufferHold=false;p.pause();return;}
+ if(state.bufferHold&&bufferAhead()<8&&(!Number.isFinite(p.duration)||p.duration-p.currentTime>8)){p.pause();videoLoading('Oldindan video yuklanmoqda…');return;}
+ state.bufferHold=false;
+ p.play().then(()=>$('start-player').hidden=true).catch(error=>{if(error.name==='NotAllowedError'){clearVideoLoading();$('start-player').hidden=false;state.autoplayBlocked=true;}});
+}
 let playbackRequest=null;
 async function loadPlayback(){
  const rid=state.room?.id;if(!rid)return;
+ state.resumePosition=state.mediaLoaded?$('player').currentTime:null;
  playbackRequest?.abort();const request=new AbortController();playbackRequest=request;
  const timeout=setTimeout(()=>request.abort(),30000);
  clearVideoLoading();videoLastProgress=Date.now();videoLastTime=0;videoLoading('Video yuklanmoqda…');$('retry-video').disabled=true;
  try{
-  const data=await api('playback?room='+encodeURIComponent(rid),undefined,request.signal);
+  const data=await api(playbackPath(rid),undefined,request.signal);
   if(state.room?.id!==rid||playbackRequest!==request)return;
   state.playbackExpiry=Date.now()+data.expires_in*1000;
   const p=$('player');state.mediaLoaded=false;
   p.onloadedmetadata=()=>{if(state.room?.id===rid){state.mediaLoaded=true;state.needsSeek=true;syncPlayer(state.room);}};
-  state.autoplayBlocked=false;p.src=data.url;p.load();renderRoom(data.room);
+  state.autoplayBlocked=false;state.selectedQuality=data.selected_quality||0;renderQuality(data.qualities);p.src=data.url;p.load();renderRoom(data.room);
  }catch(e){
   if(state.room?.id!==rid||playbackRequest!==request)return;
   reportVideo('playback_unavailable');
@@ -109,7 +120,7 @@ async function openChat(target,scope){
   media.append(button('🎙','secondary',()=>record('voice')),button('◉','secondary',()=>record('round')),button('＋','secondary',()=>{file.accept='audio/*,video/*';file.click();}));
   const send=node('button','primary','Yuborish ↑');send.type='submit';const count=node('small','chat-count','0 / 500');input.oninput=()=>count.textContent=input.value.length+' / 500';
   const stickers=node('div','sticker-picker');stickers.hidden=true;
-  for(const [id,label] of [['happy','Xursand'],['love','Sevgi'],['wow','Hayrat']]){const pick=button('','sticker-pick',()=>{input.value='[sticker:'+id+']';input.oninput();stickers.hidden=true;compose.requestSubmit();});pick.setAttribute('aria-label',label);const img=node('img');img.src='/static/sticker-'+id+'.svg';img.alt=label;pick.append(img);stickers.append(pick);}
+  buildStickerPicker(stickers,input);
   controls.append(button('☺ Stiker','secondary',()=>stickers.hidden=!stickers.hidden),media,count,send);compose.append(stickers);compose.append(reply,input,controls,file);shell.append(messages,compose);
   const chat={scope,messages,reply,input,replyTo:null,loading:false,history:[],nodes:new Map(),generation:state.generation};state.chat=chat;
   compose.onsubmit=async e=>{e.preventDefault();if(!input.value.trim()||send.disabled)return;send.disabled=true;try{await api('message',{scope,text:input.value,reply_to:chat.replyTo});input.value='';input.oninput();chat.replyTo=null;reply.hidden=true;await refreshChat(chat);}catch(err){notify(err.message);}finally{send.disabled=false;}};
@@ -141,7 +152,7 @@ async function refreshChat(chat,older=false){
 function renderMessage(m,chat){
   const line=node('div','chat-message'),body=node('div','message-body'),author=node('div','message-author',m.name);author.append(node('time','',new Date(m.created*1000).toLocaleTimeString('uz-UZ',{hour:'2-digit',minute:'2-digit'})));line.append(avatar(m),body);body.append(author);
   if(m.reply_to){const original=chat.history.find(item=>item.id===m.reply_to);const quote=node('div','reply-quote');quote.append(node('strong','',m.reply_name||original?.name||'Foydalanuvchi'),node('small','',m.reply_text||original?.text?.slice(0,80)||'Xabarga javob'));body.append(quote);}
-  const sticker=/^\[sticker:(happy|love|wow)\]$/.exec(m.text||'');if(sticker&&!m.deleted){const img=node('img','chat-sticker');img.src='/static/sticker-'+sticker[1]+'.svg';img.alt='Stiker: '+sticker[1];body.append(img);}else body.append(node('p','message-text',m.deleted?'Xabar o‘chirilgan':m.text));
+  const sticker=/^\[sticker:(happy|love|wow)\]$/.exec(m.text||'');if(sticker&&!m.deleted){const img=node('img','chat-sticker');img.src='/static/sticker-'+sticker[1]+'.svg';img.alt='Stiker: '+sticker[1];body.append(img);}else {const text=node('p','message-text');if(m.deleted)text.textContent='Xabar o‘chirilgan';else renderTelegramText(text,m.text||'');body.append(text);}
   if(m.asset_id&&!m.deleted){const load=button('▶ Ovoz / videoni ochish','secondary',async()=>{load.disabled=true;try{const data=await api('media?id='+m.id),player=node(data.kind==='voice'?'audio':'video',data.kind==='voice'?'voice-audio':'round-video');player.controls=true;player.playsInline=true;player.preload='none';player.src=data.url;load.replaceWith(player);await player.play().catch(()=>{});}finally{load.disabled=false;}});body.append(load);}
   if(!m.deleted){const actions=node('div','message-actions');actions.append(button('Javob','',()=>{chat.replyTo=m.id;chat.reply.replaceChildren(node('span','',`${m.name} ga javob`),button('×','',()=>{chat.reply.hidden=true;chat.replyTo=null;}));chat.reply.hidden=false;chat.input.focus();}),button('Shikoyat','',async()=>{await api('report',{scope:chat.scope,message_id:m.id,reason:'Foydalanuvchi shikoyati'});notify('Shikoyat adminga yuborildi');}));if(state.user.admin)actions.append(button('O‘chirish','',async()=>{await api('moderate',{message_id:m.id});await refreshChat(chat);}));body.append(actions);}
   return line;
@@ -389,14 +400,15 @@ function scheduleVideoRecovery(){if(!state.room||playbackRequest||recoveryTimer|
 $('retry-video').onclick=()=>{recoveryAttempts=0;clearVideoLoading();loadPlayback().catch(e=>videoFailed(e.message));};
 const watchedVideo=$('player');
 for(const event of ['loadstart','waiting','seeking'])watchedVideo.addEventListener(event,()=>videoLoading(event==='loadstart'?'Video yuklanmoqda…':'Video yuklanishi kutilmoqda…'));
+watchedVideo.addEventListener('waiting',()=>{if(state.mediaLoaded&&state.room?.playing&&!watchedVideo.seeking){state.bufferHold=true;watchedVideo.pause();if(state.qualityPreference==='auto')lowerQuality();}});
 watchedVideo.addEventListener('stalled',()=>{if(watchedVideo.readyState<3)videoLoading();});
 watchedVideo.addEventListener('playing',()=>{state.autoplayBlocked=false;videoLastProgress=Date.now();clearVideoLoading();});
-watchedVideo.addEventListener('canplay',()=>{videoLastProgress=Date.now();clearVideoLoading();});
-watchedVideo.addEventListener('seeked',()=>{if(watchedVideo.readyState>=3)clearVideoLoading();});
-watchedVideo.addEventListener('timeupdate',()=>{updateVideoClock();if(Math.abs(watchedVideo.currentTime-videoLastTime)>.05){videoLastTime=watchedVideo.currentTime;videoLastProgress=Date.now();if(!watchedVideo.seeking&&watchedVideo.readyState>=3)clearVideoLoading();}});
+watchedVideo.addEventListener('canplay',()=>{if(!state.bufferHold)clearVideoLoading();});
+watchedVideo.addEventListener('seeked',()=>{if(!state.bufferHold&&watchedVideo.readyState>=3)clearVideoLoading();});
+watchedVideo.addEventListener('timeupdate',()=>{updateVideoClock();if(Math.abs(watchedVideo.currentTime-videoLastTime)>.05){videoLastTime=watchedVideo.currentTime;videoLastProgress=Date.now();if(!state.bufferHold&&!watchedVideo.seeking&&watchedVideo.readyState>=3)clearVideoLoading();}});
 watchedVideo.addEventListener('ended',async()=>{clearVideoLoading();if(state.room?.personal&&state.room.owner===state.user.id){try{renderRoom(await api('cabinet/finish',{room:state.room.id}));}catch(e){notify(e.message);}}});
 setInterval(()=>{const r=state.room;const box=$('room-countdown');box.hidden=!(r?.personal&&r.ends<253402300799);if(!box.hidden)box.textContent='Kino tugadi. Kabinet '+Math.max(0,Math.ceil(r.ends-Date.now()/1000-(state.serverOffset||0)))+' soniyadan keyin yopiladi.';},1000);
-setInterval(()=>{if(state.room&&state.view==='room'&&state.room.playing&&!state.autoplayBlocked&&(!state.mediaLoaded||watchedVideo.readyState<3||!watchedVideo.paused)&&!watchedVideo.ended&&!document.hidden&&Date.now()-videoLastProgress>6000){videoLoading();if(Date.now()-videoLastProgress>20000)scheduleVideoRecovery();}},2000);
+setInterval(()=>{if(state.room&&state.view==='room'&&state.room.playing&&!state.autoplayBlocked&&(state.bufferHold||!state.mediaLoaded||watchedVideo.readyState<3||!watchedVideo.paused)&&!watchedVideo.ended&&!document.hidden&&Date.now()-videoLastProgress>6000){videoLoading();if(Date.now()-videoLastProgress>30000&&Date.now()-lastBufferProgress>30000)scheduleVideoRecovery();}},2000);
 
 // Visual viewport follows the mobile keyboard without shrinking the video itself.
 let viewportFrame=0;
@@ -419,7 +431,7 @@ window.addEventListener('online',()=>{if(state.room)tickRoom();else if(state.vie
 // Renew the authenticated range URL without replacing the playing media source.
 let renewingPlayback=false;
 setInterval(async()=>{const rid=state.room?.id;if(!rid||renewingPlayback||playbackRequest||!navigator.onLine||Date.now()<state.playbackExpiry-60000)return;
- renewingPlayback=true;try{const data=await api('playback?room='+encodeURIComponent(rid));if(state.room?.id===rid){if($('player').getAttribute('src')===data.url)state.playbackExpiry=Date.now()+data.expires_in*1000;else scheduleVideoRecovery();}}catch{}finally{renewingPlayback=false;}
+ renewingPlayback=true;try{const data=await api(playbackPath(rid));if(state.room?.id===rid){if($('player').getAttribute('src')===data.url)state.playbackExpiry=Date.now()+data.expires_in*1000;else scheduleVideoRecovery();}}catch{}finally{renewingPlayback=false;}
 },15000);
 
 let introTimer=null;
@@ -435,3 +447,17 @@ $('skip-intro').onclick=hideMovieIntro;
 $('movie-intro').addEventListener('cancel',()=>clearTimeout(introTimer));
 $('animate-logo').onclick=playMovieIntro;
 playMovieIntro();
+
+let lastBufferProgress=Date.now(),lastBufferedEnd=0;
+state.qualityPreference='auto';state.availableQualities=[];
+function playbackPath(rid){const q=state.qualityPreference==='auto'?(state.autoQuality||state.availableQualities[0]||'original'):state.qualityPreference;return 'playback?room='+encodeURIComponent(rid)+'&quality='+q;}
+function bufferAhead(){const p=$('player');for(let i=0;i<p.buffered.length;i++)if(p.buffered.start(i)<=p.currentTime+.2&&p.buffered.end(i)>p.currentTime)return p.buffered.end(i)-p.currentTime;return 0;}
+function renderQuality(info){if(!info)return;state.availableQualities=info.ready||[];const select=$('video-quality');select.replaceChildren();for(const [value,label] of [['auto','Avtomatik'],['original','Asl video'],...[360,480,720,1080].map(h=>[String(h),h+'p'])]){const option=node('option','',label);option.value=value;option.disabled=/^\d+$/.test(value)&&!state.availableQualities.includes(Number(value));select.append(option);}select.value=state.qualityPreference;
+ $('prepare-quality').hidden=!state.user?.admin||!info.enabled;
+ const names={idle:'Past sifatlar hali tayyorlanmagan.',downloading:'Kino sifatlar uchun yuklanmoqda…',encoding:'Video sifatlari tayyorlanmoqda…',ready:'Video sifatlari tayyor.',failed:'Tayyorlashda xato. Admin qayta urinishi mumkin.',disk_full:'Video nusxalari uchun serverda joy yetarli emas.',interrupted:'Tayyorlash to‘xtagan. Qayta boshlang.'};$('quality-status').textContent=(names[info.state]||'')+(state.selectedQuality?' · Hozir '+state.selectedQuality+'p':'');
+}
+$('video-quality').onchange=()=>{state.qualityPreference=$('video-quality').value;state.autoQuality=null;loadPlayback();};
+$('prepare-quality').onclick=async()=>{try{renderQuality(await api('video-quality/prepare',{room:state.room.id}));}catch(e){notify(e.message);}};
+async function lowerQuality(){const lower=state.availableQualities.filter(h=>!state.selectedQuality||h<state.selectedQuality);if(lower.length&&!playbackRequest&&!state.switchingQuality){state.autoQuality=lower[0];state.switchingQuality=true;try{await loadPlayback();}finally{state.switchingQuality=false;}}}
+watchedVideo.addEventListener('progress',()=>{const end=watchedVideo.buffered.length?watchedVideo.buffered.end(watchedVideo.buffered.length-1):0;if(end!==lastBufferedEnd){lastBufferedEnd=end;lastBufferProgress=Date.now();}if(state.bufferHold&&state.room&&state.view==='room')syncPlayer(state.room);});
+setInterval(async()=>{if(!state.room||state.view!=='room')return;try{renderQuality(await api('video-quality?room='+encodeURIComponent(state.room.id)));}catch{}},20000);

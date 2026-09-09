@@ -230,7 +230,7 @@ class Store:
         position = (room["position"] + (self.clock()-room["updated"] if room["playing"] else 0)
                     if room["private"] else self.clock()-screening["starts"])
         return {"id": rid, "screening_id": screening["id"], "title": room["name"] or screening["title"], "movie_title": screening["title"], "personal": bool(screening["personal"]), "ends": screening["ends"],
-                "duration": screening["duration"], "locked": bool(room["locked"]), "private": bool(room["private"]), "owner": room["owner"],
+                "control_revision": room["updated"], "duration": screening["duration"], "locked": bool(room["locked"]), "private": bool(room["private"]), "owner": room["owner"],
                 "position": max(0, min(position, screening["duration"])),
                 "playing": bool(room["playing"]) if room["private"] else True,
                 "members": members, "server_time": self.clock(),

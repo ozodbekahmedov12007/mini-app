@@ -3,9 +3,11 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#111316"><title>MovieRay — Kino Club</title>
-  <link rel="stylesheet" href="/static/style.css?v=chat5">
+  <link rel="stylesheet" href="/static/style.css?v=quality7">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <script defer src="/static/app.js?v=chat5"></script>
+  <script defer src="/static/lottie-light.min.js"></script>
+  <script defer src="/static/stickers.js?v=1"></script>
+  <script defer src="/static/app.js?v=quality7"></script>
 </head>
 <body>
   <header class="topbar"><a class="brand" href="/" aria-label="Bosh sahifa"><span class="brand-mark">▶</span> MovieRay<span class="brand-light">CLUB</span></a><button id="profile-button" class="avatar" aria-label="Profil">K</button></header>
@@ -41,7 +43,7 @@
     <section id="view-room" class="view" hidden>
       <button id="leave-room" class="text-button">← Xonadan chiqish</button>
       <div class="section-heading"><h2 id="room-title">Kino xonasi</h2><span id="room-count" class="pill">0 / 20</span></div>
-      <div class="room-tools"><button id="fullscreen-player" class="secondary">⛶ To‘liq ekran</button></div><div class="player-wrap" id="player-wrap"><button id="exit-theater" class="secondary" hidden>✕ Kichraytirish</button><video id="player" playsinline preload="metadata" controlslist="nodownload noremoteplayback" disablepictureinpicture></video><div id="video-loading" role="status" aria-live="polite" hidden><span class="video-spinner" aria-hidden="true"></span><span id="video-loading-text">Video yuklanmoqda…</span><button id="retry-video" type="button" class="secondary" hidden>↻ Qayta urinish</button></div><button id="start-player" class="play-overlay">▶ Tomoshani boshlash</button></div>
+      <div class="room-tools"><label class="quality-label">Sifat <select id="video-quality" aria-label="Video sifati"><option value="auto">Avtomatik</option><option value="original">Asl video</option></select></label><button id="prepare-quality" class="secondary" hidden>Sifatlarni tayyorlash</button><button id="fullscreen-player" class="secondary">⛶ To‘liq ekran</button></div><p id="quality-status" class="muted"></p><div class="player-wrap" id="player-wrap"><button id="exit-theater" class="secondary" hidden>✕ Kichraytirish</button><video id="player" playsinline preload="auto" controlslist="nodownload noremoteplayback" disablepictureinpicture></video><div id="video-loading" role="status" aria-live="polite" hidden><span class="video-spinner" aria-hidden="true"></span><span id="video-loading-text">Video yuklanmoqda…</span><button id="retry-video" type="button" class="secondary" hidden>↻ Qayta urinish</button></div><button id="start-player" class="play-overlay">▶ Tomoshani boshlash</button></div>
       <div id="owner-controls" class="owner-controls" hidden><button id="toggle-play" class="secondary">▶ / Ⅱ</button><input id="seek" type="range" min="0" max="100" value="0" aria-label="Kino vaqti"></div>
       <p id="position-label" class="muted" aria-label="Kino vaqti">0:00 / 0:00</p><p id="room-countdown" role="status" hidden></p>
       <div class="room-meta"><div id="members" class="members"></div><button id="share-room" class="secondary">↗ Do‘stni chaqirish</button></div>

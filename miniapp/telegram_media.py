@@ -1,6 +1,7 @@
-"""Telegram movie streaming on the Mini App host; no full video downloads."""
+"""Authenticated Telegram streaming, shared chunks and optional prepared qualities."""
 import asyncio
 import json
+import logging
 import os
 import re
 import secrets
@@ -8,6 +9,8 @@ import time
 from collections import OrderedDict
 from aiohttp import web
 from miniapp.core import Problem, admin
+from miniapp.video_chunks import VideoChunks, CHUNK
+from miniapp.video_quality import VideoQuality
 
 
 def byte_range(value, size):
@@ -32,6 +35,8 @@ class TelegramMedia:
         self.docs = OrderedDict()
         self.tickets = {}
         self.active = {}
+        self.chunks = VideoChunks(self)
+        self.quality = VideoQuality(self)
 
     @property
     def configured(self):
@@ -124,7 +129,7 @@ class TelegramMedia:
             await db(app,'rows','DELETE FROM assets WHERE id=?',(aid,))
             raise
 
-    async def playback(self, app, user, rid, raw):
+    async def playback(self, app, user, rid, raw, quality="original"):
         from miniapp.server import db
         room = await db(app, 'room', user, rid, heartbeat=True)
         asset = await db(app, 'one', 'SELECT a.* FROM assets a JOIN screenings s ON s.asset_id=a.id WHERE s.id=?', (room['screening_id'],))
@@ -139,7 +144,11 @@ class TelegramMedia:
                       if value['uid'] == user['id'] and value['rid'] == rid and value['raw'] == raw), None) or secrets.token_urlsafe(32)
         self.tickets[token] = {'until': now+ttl, 'raw': raw, 'rid': rid,
             'uid': user['id'], 'source': json.loads(asset['object_key'])}
-        return {'url': '/telegram-video/'+token, 'expires_in': ttl, 'room': room}
+        source=self.tickets[token]['source']
+        status=self.quality.status(source)
+        selected=int(quality) if str(quality).isdigit() else 0
+        if selected and selected not in status['ready']:raise Problem('Bu sifat hali tayyor emas',409)
+        return {'url': '/telegram-video/'+token+(('?quality='+str(selected)) if selected else ''), 'expires_in': ttl, 'room': room,'qualities':status,'selected_quality':selected}
 
     async def stream(self, request):
         from miniapp.server import db
@@ -160,6 +169,12 @@ class TelegramMedia:
                 user = await app['bridge'].identity(ticket['raw'])
                 return await db(app, 'room', user, ticket['rid'])
             await check()
+            quality=request.query.get('quality')
+            if quality:
+                if not quality.isdigit():raise Problem('Noto‘g‘ri sifat')
+                path=self.quality.path(ticket['source'],int(quality))
+                if not path.is_file():raise Problem('Bu sifat hali tayyor emas',404)
+                return await self.local_stream(request,path,check)
             doc = await self.document(ticket['source'])
             start, end, status = byte_range(request.headers.get('Range'), doc.size)
             headers = {'Content-Type': 'video/mp4', 'Content-Length': str(end-start+1),
@@ -171,24 +186,24 @@ class TelegramMedia:
             await response.prepare(request)
             if request.method == 'HEAD':
                 return response
-            client = await self.connect()
-            iterator = client.iter_download(doc, offset=start, request_size=512*1024)
+            offset = start
             remaining = end-start+1
             checked = time.monotonic()
             while remaining:
                 if time.monotonic()-checked > 5:
                     await check()
                     checked = time.monotonic()
-                try:
-                    chunk = await asyncio.wait_for(iterator.__anext__(), 30)
-                except StopAsyncIteration:
-                    break
-                piece = bytes(chunk[:remaining])
-                await asyncio.wait_for(response.write(piece), 30)
-                remaining -= len(piece)
+                aligned=offset//CHUNK*CHUNK
+                chunk=await self.chunks.read(doc,aligned)
+                piece=chunk[offset-aligned:offset-aligned+remaining]
+                if not piece:raise IOError('Incomplete Telegram video')
+                await asyncio.wait_for(response.write(piece),60)
+                remaining-=len(piece)
+                offset+=len(piece)
             await response.write_eof()
             return response
-        except (Exception, asyncio.CancelledError):
+        except (Exception, asyncio.CancelledError) as error:
+            if not isinstance(error,asyncio.CancelledError):logging.getLogger('miniapp').warning('Telegram stream interrupted: %s',type(error).__name__)
             if response is not None and response.prepared:
                 if request.transport:
                     request.transport.close()
@@ -201,6 +216,29 @@ class TelegramMedia:
             if not self.active[uid]:
                 del self.active[uid]
 
+    async def local_stream(self,request,path,check):
+        start,end,status=byte_range(request.headers.get('Range'),path.stat().st_size)
+        headers={'Content-Type':'video/mp4','Accept-Ranges':'bytes','Content-Length':str(end-start+1),'Cache-Control':'no-store'}
+        if status==206:headers['Content-Range']=f'bytes {start}-{end}/{path.stat().st_size}'
+        response=web.StreamResponse(status=status,headers=headers)
+        await response.prepare(request)
+        if request.method=='HEAD':return response
+        checked=time.monotonic()
+        try:
+            with path.open('rb') as source:
+                source.seek(start);remaining=end-start+1
+                while remaining:
+                    if time.monotonic()-checked>5:await check();checked=time.monotonic()
+                    chunk=await asyncio.to_thread(source.read,min(CHUNK,remaining))
+                    if not chunk:raise IOError('Incomplete prepared movie')
+                    await asyncio.wait_for(response.write(chunk),60);remaining-=len(chunk)
+            await response.write_eof()
+        except (Exception,asyncio.CancelledError):
+            if request.transport:request.transport.close()
+        return response
+
     async def close(self):
+        await self.quality.close()
+        await self.chunks.close()
         if self.client is not None:
             await self.client.disconnect()
