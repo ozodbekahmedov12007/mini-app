@@ -3,11 +3,12 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#111316"><title>MovieRay — Kino Club</title>
-  <link rel="stylesheet" href="/static/style.css?v=stream8">
+  <link rel="stylesheet" href="/static/style.css?v=interface9">
+  <link rel="stylesheet" href="/static/interface.css?v=9">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script defer src="/static/lottie-light.min.js"></script>
   <script defer src="/static/stickers.js?v=1"></script>
-  <script defer src="/static/app.js?v=stream8"></script>
+  <script defer src="/static/app.js?v=interface9"></script>
 </head>
 <body>
   <header class="topbar"><a class="brand" href="/" aria-label="Bosh sahifa"><span class="brand-mark">▶</span> MovieRay<span class="brand-light">CLUB</span></a><button id="profile-button" class="avatar" aria-label="Profil">K</button></header>
@@ -20,7 +21,7 @@
         <p class="intro">Yaxshi kino. Yaqin do‘stlar.<br>Barchasi bitta xonada.</p>
         <div class="hero-tags"><span>20 kishigacha</span><span>Bir vaqtda tomosha</span></div>
       </div>
-      <button id="create-room-home" class="primary room-create">＋ Do‘stlar uchun kabinet yaratish</button><p class="muted room-help">Kabinetga nom bering, bot katalogidan kino tanlang va do‘stlaringizni taklif qiling.</p><div id="home-cabinets" class="panel compact-panel"><h2>Mening kabinetlarim</h2><div id="home-cabinet-list"></div></div><div class="section-heading" id="seance-list"><h2>Kino seanslari</h2><span id="screening-count" class="pill">JADVAL</span></div>
+      <button id="create-room-home" class="primary room-create">＋ Kabinet yaratish</button><p class="muted room-help">Kino tanlang va do‘stlaringizni taklif qiling.</p><div id="home-cabinets" class="panel compact-panel"><h2>Mening kabinetlarim</h2><div id="home-cabinet-list"></div></div><div class="section-heading" id="seance-list"><h2>Kino seanslari</h2><span id="screening-count" class="pill">JADVAL</span></div>
       <div id="screenings" class="cards"><div class="empty">Seanslar yuklanmoqda…</div></div>
       <button id="community-link" class="community-card"><span class="community-icon">↗</span><span><strong>Umumiy suhbat</strong><small>Do‘stlar va kino haqidagi fikrlar →</small></span></button>
     </section>
@@ -31,12 +32,12 @@
         <label>Kabinet nomi<input id="cabinet-name" required maxlength="60" placeholder="Masalan: Do‘stlar davrasi"></label>
         <label>Kino nomi yoki kodi<div class="inline"><input id="cabinet-query" maxlength="80" placeholder="Botdagi kinoni qidiring"><button type="button" id="cabinet-search" class="secondary">Topish</button></div></label>
         <div id="cabinet-movies" role="status"></div><p id="cabinet-selected" class="muted">Kino hali tanlanmagan.</p>
-        <p class="muted">Admin seansini kutish shart emas. Kino tugagach kabinet 1 daqiqadan keyin yopiladi. 20 kishigacha; VIP kinoda har bir qatnashchiga VIP kerak.</p>
+        <p class="muted">20 kishigacha birga tomosha qiling. Kino tugagach kabinet 1 daqiqadan keyin yopiladi. VIP kino uchun har bir kishiga VIP kerak.</p>
         <button type="submit" id="cabinet-create-submit" class="primary">Kabinetni yaratish</button>
       </form>
     </section>
     <section id="view-chat" class="view" hidden>
-      <div class="section-heading"><div><div class="eyebrow">KINO CLUB JAMOASI</div><h1 class="small-title">Umumiy chat</h1></div><span class="pill"><span class="dot"></span> SUHBAT</span></div>
+      <div class="section-heading"><div><div class="eyebrow">KINO CLUB JAMOASI</div><h1 class="small-title">Suhbat</h1></div><span class="pill"><span class="dot"></span> SUHBAT</span></div>
       <p class="muted">Kino haqida fikrlar, ovozli xabarlar va do‘stlar.</p>
       <div id="global-chat" class="chat-shell"></div>
     </section>
@@ -87,12 +88,12 @@
       <div class="section-heading"><h2>Seanslar boshqaruvi</h2></div><div id="admin-screenings"></div><p class="muted">Ishtirokchilar — yangilanishdan keyingi noyob kirganlar soni; to‘liq ko‘rib tugatganlar soni emas.</p><details class="panel"><summary>Admin amallari tarixi</summary><div id="admin-audit"></div></details>
       <div class="section-heading"><h2>Shikoyatlar</h2></div><div id="reports"></div>
       <details class="panel compact-panel" id="diagnostics-panel"><summary>Video va ulanish holati</summary><div id="diagnostics-status"></div><button type="button" class="secondary" id="check-telegram">Telegram ulanishini tekshirish</button><p id="check-result" role="status"></p><div id="diagnostics-errors"></div></details>
-      <form id="restriction-form" class="panel"><h3>Foydalanuvchini cheklash</h3><label>Telegram ID<input name="user_id" inputmode="numeric" required></label><label>Muddat (soat, 0 — cheklovni olish)<input name="hours" type="number" min="0" max="8760" value="24" required></label><label class="check"><input name="banned" type="checkbox"> Mini Appga kirishni ham cheklash</label><button class="secondary">Saqlash</button></form>
+      <details class="panel compact-panel"><summary>Foydalanuvchini cheklash</summary><form id="restriction-form" class="panel"><h3>Foydalanuvchini cheklash</h3><label>Telegram ID<input name="user_id" inputmode="numeric" required></label><label>Muddat (soat, 0 — cheklovni olish)<input name="hours" type="number" min="0" max="8760" value="24" required></label><label class="check"><input name="banned" type="checkbox"> Mini Appga kirishni ham cheklash</label><button class="secondary">Saqlash</button></form></details>
     </section>
     <section id="view-waiting" class="view" hidden><div class="panel"><h2>Yopiq kabinet</h2><p id="waiting-status" role="status">Egasining ruxsati kutilmoqda.</p><button id="check-admission" class="primary" type="button">Ruxsatni tekshirish</button><button id="cancel-admission" class="secondary" type="button">Bosh sahifaga</button></div></section>
     <section id="view-login" class="view" hidden><div class="panel"><div class="eyebrow">TELEGRAM MINI APP</div><h1 class="small-title">Kino Clubga<br>xush kelibsiz.</h1><p>Profilingiz va VIP obunangizni aniqlash uchun ushbu sahifani Telegram botdagi Mini App tugmasi orqali oching.</p><p class="muted">Kino seanslari · 20 kishilik xonalar · Doimiy chat</p></div></section>
   </main>
-  <nav class="bottom-nav" aria-label="Asosiy menyu"><button data-view="home" class="active"><span>◈</span>Seanslar</button><button data-view="chat"><span>☷</span>Suhbat</button><button data-view="profile"><span>◉</span>Profil</button><button data-view="admin" id="admin-nav" hidden><span>⚙</span>Admin</button></nav>
+  <nav class="bottom-nav" aria-label="Asosiy menyu"><button data-view="home" class="active"><span>◈</span>Bosh sahifa</button><button data-view="chat"><span>☷</span>Suhbat</button><button data-view="profile"><span>◉</span>Profil</button><button data-view="admin" id="admin-nav" hidden><span>⚙</span>Admin</button></nav>
   <dialog id="record-dialog"><h2 id="record-title">Ovozli xabar</h2><video id="record-preview" muted playsinline autoplay hidden></video><p id="record-timer">0:00 / 1:00</p><div class="inline"><button id="record-stop" class="primary">To‘xtatish va yuborish</button><button id="record-cancel" class="secondary">Bekor qilish</button></div></dialog>
 <dialog id="movie-intro" aria-label="MovieRay"><div class="intro-logo"><svg viewBox="0 0 320 320" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="fire" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#f35a35"/><stop offset=".55" stop-color="#ff9e44"/><stop offset="1" stop-color="#ffe6a1"/></linearGradient><linearGradient id="ice" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#147ec0"/><stop offset="1" stop-color="#a3ffff"/></linearGradient></defs><g class="emblem-orbit"><path class="ribbon ribbon-fire" pathLength="1" d="M202 265C123 295 61 241 85 168C101 123 148 92 192 48"/><path class="ribbon ribbon-gold" pathLength="1" d="M153 248C88 224 118 165 150 135L244 42"/><path class="ribbon ribbon-blue" pathLength="1" d="M122 242C195 284 253 233 236 165"/><path class="ribbon ribbon-tip" pathLength="1" d="M183 151L249 104Q267 90 266 77"/><path class="film-holes" pathLength="1" d="M158 253C213 258 238 220 226 180"/><circle class="play-core" cx="167" cy="205" r="39"/><path class="play-triangle" d="M157 186L185 204L157 223Z"/></g><g class="logo-sparks"><circle cx="67" cy="116" r="2"/><circle cx="268" cy="189" r="3"/><circle cx="88" cy="273" r="2"/><circle cx="220" cy="28" r="2"/><circle cx="285" cy="127" r="2"/></g></svg></div><div class="intro-wordmark"><strong>Movie<span>Ray</span></strong><p>Birga kinoni his qilamiz.</p></div><button type="button" id="skip-intro">O‘tkazib yuborish</button></dialog>
 </body></html>
