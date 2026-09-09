@@ -70,7 +70,7 @@ function syncPlayer(room){
  state.lastControlRevision=room.control_revision;
  // Never discard a growing buffer just to chase the wall clock.
  if(!room.playing){state.bufferHold=false;p.pause();return;}
- if(state.bufferHold&&bufferAhead()<8&&(!Number.isFinite(p.duration)||p.duration-p.currentTime>8)){p.pause();videoLoading('Oldindan video yuklanmoqda…');return;}
+ if(state.bufferHold&&bufferAhead()<(Date.now()-(state.bufferHoldSince||0)>8000?1:8)&&(!Number.isFinite(p.duration)||p.duration-p.currentTime>8)){p.pause();videoLoading('Oldindan video yuklanmoqda…');return;}
  state.bufferHold=false;
  p.play().then(()=>$('start-player').hidden=true).catch(error=>{if(error.name==='NotAllowedError'){clearVideoLoading();$('start-player').hidden=false;state.autoplayBlocked=true;}});
 }
@@ -400,15 +400,15 @@ function scheduleVideoRecovery(){if(!state.room||playbackRequest||recoveryTimer|
 $('retry-video').onclick=()=>{recoveryAttempts=0;clearVideoLoading();loadPlayback().catch(e=>videoFailed(e.message));};
 const watchedVideo=$('player');
 for(const event of ['loadstart','waiting','seeking'])watchedVideo.addEventListener(event,()=>videoLoading(event==='loadstart'?'Video yuklanmoqda…':'Video yuklanishi kutilmoqda…'));
-watchedVideo.addEventListener('waiting',()=>{if(state.mediaLoaded&&state.room?.playing&&!watchedVideo.seeking){state.bufferHold=true;watchedVideo.pause();if(state.qualityPreference==='auto')lowerQuality();}});
+watchedVideo.addEventListener('waiting',()=>{if(state.mediaLoaded&&state.room?.playing&&!watchedVideo.seeking){if(!state.bufferHold)state.bufferHoldSince=Date.now();state.bufferHold=true;watchedVideo.pause();if(state.qualityPreference==='auto')lowerQuality();}});
 watchedVideo.addEventListener('stalled',()=>{if(watchedVideo.readyState<3)videoLoading();});
 watchedVideo.addEventListener('playing',()=>{state.autoplayBlocked=false;videoLastProgress=Date.now();clearVideoLoading();});
 watchedVideo.addEventListener('canplay',()=>{if(!state.bufferHold)clearVideoLoading();});
 watchedVideo.addEventListener('seeked',()=>{if(!state.bufferHold&&watchedVideo.readyState>=3)clearVideoLoading();});
-watchedVideo.addEventListener('timeupdate',()=>{updateVideoClock();if(Math.abs(watchedVideo.currentTime-videoLastTime)>.05){videoLastTime=watchedVideo.currentTime;videoLastProgress=Date.now();if(!state.bufferHold&&!watchedVideo.seeking&&watchedVideo.readyState>=3)clearVideoLoading();}});
+watchedVideo.addEventListener('timeupdate',()=>{updateVideoClock();if(Math.abs(watchedVideo.currentTime-videoLastTime)>.05){videoLastTime=watchedVideo.currentTime;videoLastProgress=Date.now();if(!state.bufferHold&&bufferAhead()>8)recoveryAttempts=0;if(!state.bufferHold&&!watchedVideo.seeking&&watchedVideo.readyState>=3)clearVideoLoading();}});
 watchedVideo.addEventListener('ended',async()=>{clearVideoLoading();if(state.room?.personal&&state.room.owner===state.user.id){try{renderRoom(await api('cabinet/finish',{room:state.room.id}));}catch(e){notify(e.message);}}});
 setInterval(()=>{const r=state.room;const box=$('room-countdown');box.hidden=!(r?.personal&&r.ends<253402300799);if(!box.hidden)box.textContent='Kino tugadi. Kabinet '+Math.max(0,Math.ceil(r.ends-Date.now()/1000-(state.serverOffset||0)))+' soniyadan keyin yopiladi.';},1000);
-setInterval(()=>{if(state.room&&state.view==='room'&&state.room.playing&&!state.autoplayBlocked&&(state.bufferHold||!state.mediaLoaded||watchedVideo.readyState<3||!watchedVideo.paused)&&!watchedVideo.ended&&!document.hidden&&Date.now()-videoLastProgress>6000){videoLoading();if(Date.now()-videoLastProgress>30000&&Date.now()-lastBufferProgress>30000)scheduleVideoRecovery();}},2000);
+setInterval(()=>{if(state.bufferHold&&state.room&&state.view==='room')syncPlayer(state.room);if(state.room&&state.view==='room'&&state.room.playing&&!state.autoplayBlocked&&(state.bufferHold||!state.mediaLoaded||watchedVideo.readyState<3||!watchedVideo.paused)&&!watchedVideo.ended&&!document.hidden&&Date.now()-videoLastProgress>6000){videoLoading();if(Date.now()-videoLastProgress>30000&&Date.now()-lastBufferProgress>30000)scheduleVideoRecovery();}},2000);
 
 // Visual viewport follows the mobile keyboard without shrinking the video itself.
 let viewportFrame=0;

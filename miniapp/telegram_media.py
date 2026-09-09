@@ -88,6 +88,16 @@ class TelegramMedia:
                 self.docs.popitem(last=False)
             return doc
 
+    async def refresh_document(self, source, stale):
+        key = (int(source['channel']), int(source['message']))
+        cached = self.docs.get(key)
+        if cached and cached[1] is stale:
+            self.docs.pop(key, None)
+        fresh = await self.document(source)
+        if fresh.id != stale.id or fresh.size != stale.size:
+            raise Problem('Telegramdagi kino almashtirilgan. Kinoni qayta oching.', 409)
+        return fresh
+
     async def import_movie(self, app, user, source, data):
         from miniapp.server import db
         admin(user)
@@ -194,7 +204,7 @@ class TelegramMedia:
                     await check()
                     checked = time.monotonic()
                 aligned=offset//CHUNK*CHUNK
-                chunk=await self.chunks.read(doc,aligned)
+                chunk=await self.chunks.read(doc,aligned,ticket['source'])
                 piece=chunk[offset-aligned:offset-aligned+remaining]
                 if not piece:raise IOError('Incomplete Telegram video')
                 await asyncio.wait_for(response.write(piece),60)

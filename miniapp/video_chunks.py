@@ -1,5 +1,6 @@
 """Bounded shared Telegram chunk cache; permissions stay at the HTTP layer."""
 import asyncio
+from telethon.errors import FileReferenceExpiredError, FileReferenceInvalidError
 from collections import OrderedDict
 
 CHUNK = 512 * 1024
@@ -11,7 +12,7 @@ class VideoChunks:
         self.bytes = 0
         self.slots = asyncio.Semaphore(3)
 
-    async def read(self, doc, offset):
+    async def read(self, doc, offset, source=None):
         key=(doc.id, offset)
         if key in self.cache:
             self.cache.move_to_end(key)
@@ -20,12 +21,13 @@ class VideoChunks:
             if len(self.pending)>=64:
                 raise TimeoutError('Video read queue full')
             async def fetch():
+                current_doc = doc
                 async with self.slots:
                     for attempt in range(3):
                         iterator=None
                         try:
                             client=await self.media.connect()
-                            iterator=client.iter_download(doc,offset=offset,limit=1,request_size=CHUNK,chunk_size=CHUNK)
+                            iterator=client.iter_download(current_doc,offset=offset,limit=1,request_size=CHUNK,chunk_size=CHUNK)
                             data=bytes(await asyncio.wait_for(iterator.__anext__(),25))
                             if not data:raise IOError('Empty Telegram chunk')
                             self.cache[key]=data
@@ -33,6 +35,9 @@ class VideoChunks:
                             while self.bytes>self.max_bytes:
                                 _,old=self.cache.popitem(last=False);self.bytes-=len(old)
                             return data
+                        except (FileReferenceExpiredError, FileReferenceInvalidError):
+                            if source is None or attempt == 2:raise
+                            current_doc = await self.media.refresh_document(source, current_doc)
                         except (TimeoutError, OSError):
                             if attempt==2:raise
                             await asyncio.sleep(.4*(attempt+1))
